@@ -1,0 +1,19 @@
+image: python:3.12
+
+stages:
+  - scrape
+
+variables:
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+
+before_script:
+  - python --version
+  - pip install --upgrade pip
+  - pip install -r requirements.txt
+
+scrape_jobs:
+  stage: scrape
+  script:
+    - python scraper.py
+  only:
+    - schedules
