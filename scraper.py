@@ -139,11 +139,13 @@ def scrape_workday(company_slug, company_name, location_id):
         "Referer": f"https://{subdomain}.wd5.myworkdayjobs.com/"
     }
 
+    PAGE_SIZE = 20
+
     payload = {
         "appliedFacets": {
             "locations": [location_id]
         },
-        "limit": 20,
+        "count": PAGE_SIZE,
         "offset": 0,
         "searchText": ""
     }
@@ -182,12 +184,19 @@ def scrape_workday(company_slug, company_name, location_id):
             seniority, function = classify_job(job.get("title", ""))
             region, is_remote, is_japan, remote_scope = classify_location(location_name)
 
+            # Use externalPath as unique ID
+            external_path = job.get("externalPath")
+
+            if not external_path:
+                print("Skipping job with no externalPath")
+                continue
+
             job_data = {
                 "company": company_name,
-                "external_id": str(job.get("id")),
+                "external_id": external_path,   # FIXED
                 "title": job.get("title"),
                 "location": location_name,
-                "url": f"https://{subdomain}.wd5.myworkdayjobs.com/ja-JP/{tenant}/job/{job.get('externalPath')}",
+                "url": f"https://{subdomain}.wd5.myworkdayjobs.com/ja-JP/{tenant}{external_path}",  # FIXED
                 "seniority": seniority,
                 "function": function,
                 "region": region,
@@ -196,14 +205,21 @@ def scrape_workday(company_slug, company_name, location_id):
                 "last_seen_at": now.isoformat()
             }
 
-            supabase.table("jobs").upsert(
+            result = supabase.table("jobs").upsert(
                 job_data,
                 on_conflict="company,external_id"
             ).execute()
 
+            if hasattr(result, "error") and result.error:
+                print("Supabase error:", result.error)
+
             total_jobs += 1
 
-        payload["offset"] += 20
+        # 🔑 Correct pagination stop condition
+        if len(jobs) < PAGE_SIZE:
+            break
+
+        payload["offset"] += PAGE_SIZE
 
     print(f"Total jobs found for {company_name}: {total_jobs}")
 
