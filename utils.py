@@ -22,41 +22,42 @@ def classify_job(title):
     return seniority, function
     
 def classify_location(location_name):
+    if not location_name:
+        return None, False, False, None
 
-    location_lower = location_name.lower()
+    loc = location_name.lower()
 
-    is_remote = False
-    is_japan = False
-    region = "Other"
+    # Detect Japan
+    is_japan = "japan" in loc or "tokyo" in loc or "osaka" in loc
+
+    # Detect Remote
+    is_remote = "remote" in loc
+
     remote_scope = None
 
-    # --- Remote detection ---
-    if "remote" in location_lower or "anywhere" in location_lower:
-        is_remote = True
-
-        if "anywhere" in location_lower:
-            remote_scope = "Global"
-        elif "japan" in location_lower:
-            remote_scope = "Japan"
-        elif "us" in location_lower or "united states" in location_lower:
-            remote_scope = "US"
-        elif "emea" in location_lower:
-            remote_scope = "EMEA"
+    if is_remote:
+        if any(term in loc for term in ["anywhere", "worldwide", "global"]):
+            remote_scope = "global"
+        elif "apac" in loc:
+            remote_scope = "apac"
+        elif "japan" in loc:
+            remote_scope = "japan"
+        elif any(term in loc for term in [
+            "us", "united states",
+            "canada",
+            "uk", "united kingdom",
+            "germany",
+            "france",
+            "india",
+            "singapore",
+            "australia"
+        ]):
+            remote_scope = "country_specific"
         else:
-            remote_scope = "Unspecified"
+            # Plain "Remote" with no qualifier
+            remote_scope = "global"
 
-    # --- Japan detection ---
-    if "japan" in location_lower or "tokyo" in location_lower:
-        is_japan = True
-        region = "Japan"
-
-    elif "north america" in location_lower:
-        region = "North America"
-
-    elif "europe" in location_lower:
-        region = "Europe"
-
-    elif is_remote:
-        region = "Remote"
+    # Region (optional classification)
+    region = "Japan" if is_japan else None
 
     return region, is_remote, is_japan, remote_scope
