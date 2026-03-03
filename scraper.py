@@ -182,9 +182,6 @@ def scrape_workday(company_slug, company_name, location_id):
             seniority, function = classify_job(job.get("title", ""))
             region, is_remote, is_japan, remote_scope = classify_location(location_name)
 
-            if not is_japan:
-                continue  # extra safety
-
             job_data = {
                 "company": company_name,
                 "external_id": str(job.get("id")),
