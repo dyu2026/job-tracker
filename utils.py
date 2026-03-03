@@ -30,55 +30,40 @@ def classify_location(location_name):
     # ------------------------
     # Japan detection
     # ------------------------
-    is_japan = any(term in loc for term in [
-        "japan", "tokyo", "osaka", "yokohama"
-    ])
+    japan_terms = ["japan", "tokyo", "osaka", "yokohama"]
+    is_japan = any(term in loc for term in japan_terms)
 
     # ------------------------
     # Remote detection
     # ------------------------
     is_remote = "remote" in loc
-
     remote_scope = None
 
-    # Regions we EXCLUDE
-    restricted_terms = [
-        "us", "united states",
-        "canada",
-        "america", "americas",
-        "north america",
-        "emea",
-        "ireland",
-        "netherlands",
-        "united arab emirates", "uae",
-        "south korea",
-        "italy",
-        "spain",
-        "sweden",
-        "brazil",
-        "australia"
-    ]
+    # Explicit allowed global indicators
+    global_terms = ["anywhere", "worldwide", "global"]
 
+    # Explicit allowed regional indicator
+    apac_terms = ["apac"]
+
+    # If remote
     if is_remote:
-        # Exclude restricted region remotes
-        if any(term in loc for term in restricted_terms):
-            remote_scope = "restricted"
 
-        # Explicit APAC
-        elif "apac" in loc:
+        # Explicit allowed cases first
+        if any(term in loc for term in global_terms):
+            remote_scope = "global"
+
+        elif any(term in loc for term in apac_terms):
             remote_scope = "apac"
 
-        # Explicit Japan
         elif "japan" in loc:
             remote_scope = "japan"
 
-        # Explicit global indicators
-        elif any(term in loc for term in [
-            "anywhere", "worldwide", "global"
-        ]):
-            remote_scope = "global"
+        # If location contains a comma after "remote",
+        # assume region-qualified and therefore restricted
+        elif "," in loc:
+            remote_scope = "restricted"
 
-        # Plain "Remote" with no region
+        # Plain "Remote" with no qualifier
         else:
             remote_scope = "global"
 
