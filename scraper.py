@@ -319,7 +319,7 @@ def scrape_workday(company_slug, company_name, location_id):
     print(f"Total jobs found for {company_name}: {total_jobs}")
 
     mark_removed_jobs(company_name, seen_ids)
-
+ 
 
 # -----------------------------------
 # MAIN
@@ -331,6 +331,7 @@ if __name__ == "__main__":
     scrape_greenhouse("figma", "Figma")
     scrape_greenhouse("stripe", "Stripe")
     scrape_greenhouse("anthropic", "Anthropic")
+    scrape_greenhouse("nothing", "Nothing")
 
     scrape_ashby("notion", "Notion")
     scrape_ashby("duck-duck-go", "DuckDuckGo")
