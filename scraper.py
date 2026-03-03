@@ -83,7 +83,7 @@ def scrape_greenhouse(company_slug, company_name):
         seniority, function = classify_job(job["title"])
         region, is_remote, is_japan, remote_scope = classify_location(location_name)
 
-        if not is_japan:
+        if not (is_japan or is_remote):
             continue
 
         external_id = str(job["id"])
@@ -133,7 +133,7 @@ def scrape_ashby(company_slug, company_name):
         seniority, function = classify_job(title)
         region, is_remote, is_japan, remote_scope = classify_location(location_name)
 
-        if not is_japan:
+        if not (is_japan or is_remote):
             continue
 
         external_id = str(job["id"])
@@ -184,7 +184,7 @@ def scrape_smartrecruiters(company_slug, company_name):
         seniority, function = classify_job(title)
         region, is_remote, is_japan, remote_scope = classify_location(location_name)
 
-        if not is_japan:
+        if not (is_japan or is_remote):
             continue
 
         external_id = str(job["id"])
@@ -274,7 +274,7 @@ def scrape_workday(company_slug, company_name, location_id):
             seniority, function = classify_job(job.get("title", ""))
             region, is_remote, is_japan, remote_scope = classify_location(location_name)
 
-            if not is_japan:
+            if not (is_japan or is_remote):
                 continue
 
             external_id = external_path
