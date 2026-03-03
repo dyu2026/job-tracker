@@ -4,9 +4,40 @@ from supabase_client import supabase
 from datetime import datetime, UTC
 
 
+# -----------------------------------
+# Helper: Upsert With first_seen_at
+# -----------------------------------
+
+def upsert_job(job_data):
+    now = datetime.now(UTC).isoformat()
+
+    # Check if job already exists
+    existing = supabase.table("jobs") \
+        .select("first_seen_at") \
+        .eq("company", job_data["company"]) \
+        .eq("external_id", job_data["external_id"]) \
+        .execute()
+
+    if existing.data:
+        first_seen = existing.data[0]["first_seen_at"]
+    else:
+        first_seen = now
+
+    job_data["first_seen_at"] = first_seen
+    job_data["last_seen_at"] = now
+
+    supabase.table("jobs").upsert(
+        job_data,
+        on_conflict="company,external_id"
+    ).execute()
+
+
+# -----------------------------------
+# Greenhouse
+# -----------------------------------
+
 def scrape_greenhouse(company_slug, company_name):
     url = f"https://boards-api.greenhouse.io/v1/boards/{company_slug}/jobs"
-    now = datetime.now(UTC)
     response = requests.get(url)
     data = response.json()
 
@@ -21,7 +52,6 @@ def scrape_greenhouse(company_slug, company_name):
 
         seniority, function = classify_job(job["title"])
         region, is_remote, is_japan, remote_scope = classify_location(location_name)
-        
 
         job_data = {
             "company": company_name,
@@ -34,22 +64,21 @@ def scrape_greenhouse(company_slug, company_name):
             "region": region,
             "is_remote": is_remote,
             "is_japan": is_japan,
-            "last_seen_at": now.isoformat()
         }
 
-        supabase.table("jobs").upsert(
-            job_data,
-            on_conflict="company,external_id"
-        ).execute()
+        upsert_job(job_data)
+
+
+# -----------------------------------
+# Ashby
+# -----------------------------------
 
 def scrape_ashby(company_slug, company_name):
     url = f"https://api.ashbyhq.com/posting-api/job-board/{company_slug}"
-    now = datetime.now(UTC)
     response = requests.get(url)
     data = response.json()
 
     jobs = data.get("jobs", [])
-
     print(f"Found {len(jobs)} jobs for {company_name}")
 
     for job in jobs:
@@ -75,22 +104,21 @@ def scrape_ashby(company_slug, company_name):
             "region": region,
             "is_remote": is_remote,
             "is_japan": is_japan,
-            "last_seen_at": now.isoformat()
         }
 
-        supabase.table("jobs").upsert(
-            job_data,
-            on_conflict="company,external_id"
-        ).execute()
+        upsert_job(job_data)
+
+
+# -----------------------------------
+# SmartRecruiters
+# -----------------------------------
 
 def scrape_smartrecruiters(company_slug, company_name):
     url = f"https://api.smartrecruiters.com/v1/companies/{company_slug}/postings"
-    now = datetime.now(UTC)
     response = requests.get(url)
     data = response.json()
 
     jobs = data.get("content", [])
-
     print(f"Found {len(jobs)} jobs for {company_name}")
 
     for job in jobs:
@@ -117,19 +145,19 @@ def scrape_smartrecruiters(company_slug, company_name):
             "region": region,
             "is_remote": is_remote,
             "is_japan": is_japan,
-            "last_seen_at": now.isoformat()
         }
 
-        supabase.table("jobs").upsert(
-            job_data,
-            on_conflict="company,external_id"
-        ).execute()
+        upsert_job(job_data)
+
+
+# -----------------------------------
+# Workday
+# -----------------------------------
 
 def scrape_workday(company_slug, company_name, location_id):
     subdomain, tenant = company_slug.split("|")
 
     url = f"https://{subdomain}.wd5.myworkdayjobs.com/wday/cxs/{subdomain}/{tenant}/jobs"
-    now = datetime.now(UTC)
 
     headers = {
         "Content-Type": "application/json",
@@ -167,7 +195,6 @@ def scrape_workday(company_slug, company_name, location_id):
 
         if response.status_code != 200:
             print(f"Failed for {company_name}: {response.status_code}")
-            print(response.text)
             break
 
         data = response.json()
@@ -179,43 +206,31 @@ def scrape_workday(company_slug, company_name, location_id):
         print(f"Fetched {len(jobs)} jobs at offset {payload['offset']}")
 
         for job in jobs:
+            external_path = job.get("externalPath")
+            if not external_path:
+                continue
+
             location_name = job.get("locationsText", "")
 
             seniority, function = classify_job(job.get("title", ""))
             region, is_remote, is_japan, remote_scope = classify_location(location_name)
 
-            # Use externalPath as unique ID
-            external_path = job.get("externalPath")
-
-            if not external_path:
-                print("Skipping job with no externalPath")
-                continue
-
             job_data = {
                 "company": company_name,
-                "external_id": external_path,   # FIXED
+                "external_id": external_path,
                 "title": job.get("title"),
                 "location": location_name,
-                "url": f"https://{subdomain}.wd5.myworkdayjobs.com/ja-JP/{tenant}{external_path}",  # FIXED
+                "url": f"https://{subdomain}.wd5.myworkdayjobs.com/ja-JP/{tenant}{external_path}",
                 "seniority": seniority,
                 "function": function,
                 "region": region,
                 "is_remote": is_remote,
                 "is_japan": is_japan,
-                "last_seen_at": now.isoformat()
             }
 
-            result = supabase.table("jobs").upsert(
-                job_data,
-                on_conflict="company,external_id"
-            ).execute()
-
-            if hasattr(result, "error") and result.error:
-                print("Supabase error:", result.error)
-
+            upsert_job(job_data)
             total_jobs += 1
 
-        # 🔑 Correct pagination stop condition
         if len(jobs) < PAGE_SIZE:
             break
 
@@ -223,25 +238,30 @@ def scrape_workday(company_slug, company_name, location_id):
 
     print(f"Total jobs found for {company_name}: {total_jobs}")
 
+
+# -----------------------------------
+# MAIN
+# -----------------------------------
+
 if __name__ == "__main__":
-    # Greenhouse
     scrape_greenhouse("brave", "Brave")
     scrape_greenhouse("gitlab", "GitLab")
 
-    # Ashby
     scrape_ashby("notion", "Notion")
     scrape_ashby("duck-duck-go", "DuckDuckGo")
     scrape_ashby("deepl", "DeepL")
     scrape_ashby("lilt-corporate", "Lilt")
-    
+
     scrape_smartrecruiters("Canva", "Canva")
+
     scrape_workday(
-    "disney|disneycareer",
-    "Disney",
-    location_id="4f84d9e8a09701011a72254a71290000"
+        "disney|disneycareer",
+        "Disney",
+        location_id="4f84d9e8a09701011a72254a71290000"
     )
+
     scrape_workday(
-    "workday|Workday",
-    "Workday",
-    location_id="9248082dd0ba104584ac4b3d9356363b"
+        "workday|Workday",
+        "Workday",
+        location_id="9248082dd0ba104584ac4b3d9356363b"
     )
