@@ -329,6 +329,7 @@ if __name__ == "__main__":
     scrape_greenhouse("brave", "Brave")
     scrape_greenhouse("gitlab", "GitLab")
     scrape_greenhouse("figma", "Figma")
+    scrape_greenhouse("stripe", "Stripe")
 
     scrape_ashby("notion", "Notion")
     scrape_ashby("duck-duck-go", "DuckDuckGo")
