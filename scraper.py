@@ -246,6 +246,7 @@ def scrape_workday(company_slug, company_name, location_id):
 if __name__ == "__main__":
     scrape_greenhouse("brave", "Brave")
     scrape_greenhouse("gitlab", "GitLab")
+    scrape_greenhouse("figma", "Figma")
 
     scrape_ashby("notion", "Notion")
     scrape_ashby("duck-duck-go", "DuckDuckGo")
