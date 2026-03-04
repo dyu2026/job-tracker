@@ -471,19 +471,20 @@ def scrape_workday(company_slug, company_name, location_id):
         print(f"Fetched {len(jobs)} jobs at offset {payload['offset']}")
 
         for job in jobs:
+            title = job.get("title", "")
             external_path = job.get("externalPath")
-            if not external_path:
-                continue
+            
+            # Correctly get the real locations
+            if job.get("locations"):
+                location_name = " / ".join(loc.get("locationName", "") for loc in job["locations"])
+            else:
+                location_name = job.get("locationsText", "")
 
-            location_name = job.get("locationsText", "")
-
-            seniority, function = classify_job(job.get("title", ""))
+            seniority, function = classify_job(title)
             region, is_remote, is_japan, remote_scope = classify_location(location_name)
 
-            if not (
-                is_japan
-                or remote_scope in ["global", "apac", "japan"]
-            ):
+            if not (is_japan or remote_scope in ["global", "apac", "japan"]):
+            #    print(f"Skipping job '{title}' due to location: {location_name}")
                 continue
 
 
