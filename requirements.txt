@@ -1,3 +1,5 @@
 requests
 supabase
 datetime
+beautifulsoup4
+lxml
