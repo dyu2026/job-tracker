@@ -3,4 +3,3 @@ supabase
 datetime
 beautifulsoup4
 lxml
-urllib.parse
