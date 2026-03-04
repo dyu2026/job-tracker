@@ -27,75 +27,46 @@ def classify_location(location_name):
 
     loc = location_name.lower().strip()
 
-    # -------------------------
-    # JAPAN DETECTION
-    # -------------------------
-    japan_terms = [
-        "japan", "tokyo", "osaka", "yokohama"
-    ]
-    is_japan = any(term in loc for term in japan_terms)
+    # Split multiple locations
+    loc_parts = [part.strip() for part in loc.replace("/", ",").split(",")]
 
-    # -------------------------
-    # REMOTE DETECTION
-    # -------------------------
+    is_japan = any(any(term in part for term in ["japan", "tokyo", "osaka", "yokohama"]) for part in loc_parts)
     is_remote = "remote" in loc
     remote_scope = None
 
-    # -------------------------
-    # HARD RESTRICTED KEYWORDS
-    # -------------------------
     restricted_keywords = [
-        # United States variations
         "united states", "usa", "us-", "us ", " us",
         "new york", "san francisco", "seattle",
-        "chicago", "atlanta",
-        "west coast",
-
-        # Canada
+        "chicago", "atlanta", "west coast",
         "canada", "toronto", "british columbia",
-
-        # Europe
         "europe", "emea",
-
-        # APAC countries you want excluded
         "singapore", "sydney", "bangkok",
-
-        # Other countries
         "france", "germany", "ireland", "netherlands",
         "spain", "sweden", "italy", "india",
         "brazil", "australia", "united kingdom",
         "south korea", "united arab emirates", "uae"
     ]
 
-    # If Japan, allow immediately
+    # If any location is Japan, allow immediately
     if is_japan:
         return "Japan", is_remote, True, "japan"
 
-    # If remote
     if is_remote:
-
         # Explicitly allowed global indicators
         if any(term in loc for term in ["anywhere", "worldwide", "global"]):
             remote_scope = "global"
-
         elif "apac" in loc:
             remote_scope = "apac"
-
-        # If restricted keyword appears → block
-        elif any(term in loc for term in restricted_keywords):
+        # If restricted keyword appears in any part → restrict
+        elif any(any(term in part for term in restricted_keywords) for part in loc_parts):
             remote_scope = "restricted"
-
-        # If contains comma or slash after remote,
-        # assume region-qualified (e.g., Remote, US / US-Remote)
-        elif "," in loc or "/" in loc or "-" in loc:
-            remote_scope = "restricted"
-
-        # Plain "Remote"
         else:
             remote_scope = "global"
-
     else:
-        # Non-remote and non-Japan → restricted
-        remote_scope = "restricted"
+        # Non-remote and non-Japan → check if any part is APAC
+        if any(term in part for part in loc_parts for term in ["apac", "asia", "south korea", "singapore", "hong kong"]):
+            remote_scope = "apac"
+        else:
+            remote_scope = "restricted"
 
     return None, is_remote, False, remote_scope
