@@ -1,9 +1,9 @@
 from utils import classify_job, classify_location
-import requests
+import requests, json
 from supabase_client import supabase
 from datetime import datetime, UTC
-import json
 from bs4 import BeautifulSoup
+from urllib.parse import urlparse
 
 
 # -----------------------------------
@@ -61,6 +61,175 @@ def mark_removed_jobs(company_name, seen_ids):
             .eq("company", company_name) \
             .execute()
 
+# -----------------------------------
+# Universal Next.js Scraper (Auto Detect)
+# -----------------------------------
+
+def scrape_nextjs_company(
+    company_name,
+    careers_url,
+    json_page_path,
+    locale="en"
+):
+
+    print(f"\nScraping {company_name}...")
+
+    # -------------------------
+    # Step 1: Fetch careers page
+    # -------------------------
+    try:
+        res = requests.get(careers_url, timeout=20)
+        res.raise_for_status()
+    except Exception as e:
+        print(f"❌ Failed to fetch careers page: {e}")
+        return
+
+    soup = BeautifulSoup(res.text, "html.parser")
+    script_tag = soup.find("script", {"id": "__NEXT_DATA__"})
+
+    if not script_tag:
+        print("❌ __NEXT_DATA__ not found")
+        return
+
+    next_data = json.loads(script_tag.string)
+    build_id = next_data.get("buildId")
+
+    if not build_id:
+        print("❌ buildId missing")
+        return
+
+    print(f"✅ buildId found: {build_id}")
+
+    # -------------------------
+    # Step 2: Fetch JSON data
+    # -------------------------
+    parsed = urlparse(careers_url)
+
+    # Remove trailing slash
+    path = parsed.path.rstrip("/")
+
+    # Remove the last segment (page slug)
+    base_path = "/".join(path.split("/")[:-1])
+
+    root = f"{parsed.scheme}://{parsed.netloc}"
+
+    json_url = (
+        f"{root}{base_path}/_next/data/"
+        f"{build_id}/{locale}/{json_page_path}.json"
+    )
+
+    print(f"📡 Fetching JSON: {json_url}")
+
+    try:
+        data_res = requests.get(json_url, timeout=20)
+        data_res.raise_for_status()
+        data = data_res.json()
+    except Exception as e:
+        print(f"❌ Failed to fetch JSON: {e}")
+        return
+
+    # -------------------------
+    # Step 3: Auto-detect job list
+    # -------------------------
+
+    def find_job_list(obj):
+        if isinstance(obj, dict):
+            for v in obj.values():
+                result = find_job_list(v)
+                if result:
+                    return result
+        elif isinstance(obj, list):
+            if not obj:
+                return None
+            if isinstance(obj[0], dict):
+                keys = obj[0].keys()
+                if (
+                    any(k in keys for k in ["title", "text", "name"])
+                    and any(k in keys for k in ["id", "jobId", "requisition_id"])
+                ):
+                    return obj
+            for item in obj:
+                result = find_job_list(item)
+                if result:
+                    return result
+        return None
+
+    jobs = find_job_list(data)
+
+    if not jobs:
+        print("❌ No job list detected")
+        return
+
+    print(f"Found {len(jobs)} jobs for {company_name}")
+
+    # -------------------------
+    # Step 4: Process Jobs
+    # -------------------------
+
+    seen_ids = set()
+
+    for job in jobs:
+
+        # --- Auto-detect fields ---
+        title = (
+            job.get("title")
+            or job.get("text")
+            or job.get("name")
+        )
+
+        external_id = (
+            job.get("id")
+            or job.get("jobId")
+            or job.get("requisition_id")
+        )
+
+        location_obj = job.get("location")
+
+        if isinstance(location_obj, dict):
+            location_name = location_obj.get("name", "")
+        else:
+            location_name = location_obj or ""
+
+        job_url = (
+            job.get("absolute_url")
+            or job.get("url")
+            or job.get("applyUrl")
+        )
+
+        if not title or not external_id:
+            continue
+
+        # --- Classification ---
+        seniority, function = classify_job(title)
+        region, is_remote, is_japan, remote_scope = classify_location(location_name)
+
+        if not (
+            is_japan
+            or remote_scope in ["global", "apac", "japan"]
+        ):
+            continue
+
+        external_id = str(external_id)
+        seen_ids.add(external_id)
+
+        job_data = {
+            "company": company_name,
+            "external_id": external_id,
+            "title": title,
+            "location": location_name,
+            "url": job_url,
+            "seniority": seniority,
+            "function": function,
+            "region": region,
+            "is_remote": is_remote,
+            "is_japan": is_japan,
+        }
+
+        upsert_job(job_data)
+
+    mark_removed_jobs(company_name, seen_ids)
+
+    print(f"✅ Finished {company_name}")
 
 # -----------------------------------
 # Greenhouse
@@ -107,117 +276,18 @@ def scrape_greenhouse(company_slug, company_name):
         upsert_job(job_data)
 
     mark_removed_jobs(company_name, seen_ids)
-
+    
 # -----------------------------------
-# Miro (Next.js JSON - Auto buildId)
+# Miro
 # -----------------------------------
-
-def scrape_miro(company_name="Miro"):
-
-    careers_url = "https://miro.com/careers/open-positions/"
-    print(f"Scraping {company_name}...")
-
-    # Step 1: Fetch careers page
-    try:
-        res = requests.get(careers_url, timeout=20)
-        res.raise_for_status()
-    except Exception as e:
-        print(f"❌ Failed to fetch careers page: {e}")
-        return
-
-    soup = BeautifulSoup(res.text, "html.parser")
-
-    script_tag = soup.find("script", {"id": "__NEXT_DATA__"})
-    if not script_tag:
-        print("❌ __NEXT_DATA__ not found")
-        return
-
-    next_data = json.loads(script_tag.string)
-    build_id = next_data.get("buildId")
-
-    if not build_id:
-        print("❌ buildId missing")
-        return
-
-    print(f"✅ buildId found: {build_id}")
-
-    # Step 2: Fetch JSON data
-    json_url = f"https://miro.com/careers/_next/data/{build_id}/en/open-positions.json"
-    print(f"📡 Fetching JSON: {json_url}")
-
-    try:
-        data_res = requests.get(json_url, timeout=20)
-        data_res.raise_for_status()
-        data = data_res.json()
-    except Exception as e:
-        print(f"❌ Failed to fetch JSON: {e}")
-        return
-
-    page_props = data.get("pageProps", {})
-    departments = page_props.get("departmentsWithJobs", [])
-
-    if not departments:
-        print("❌ departmentsWithJobs not found")
-        return
-
-    # Flatten all jobs
-    all_jobs = []
-    for dept in departments:
-        jobs = dept.get("jobs", [])
-        all_jobs.extend(jobs)
-
-    print(f"Found {len(all_jobs)} jobs for {company_name}")
-
-    seen_ids = set()
-
-    for job in all_jobs:
-
-        title = job.get("title")
-        external_id = job.get("id")
-
-        if not title or not external_id:
-            continue
-
-        location_obj = job.get("location")
-        if isinstance(location_obj, dict):
-            location_name = location_obj.get("name", "")
-        else:
-            location_name = location_obj or ""
-
-        job_url = job.get("absolute_url")
-
-        # --- Classification ---
-        seniority, function = classify_job(title)
-        region, is_remote, is_japan, remote_scope = classify_location(location_name)
-
-        # --- Geography filter ---
-        if not (
-            is_japan
-            or remote_scope in ["global", "apac", "japan"]
-        ):
-            continue
-
-        external_id = str(external_id)
-        seen_ids.add(external_id)
-
-        job_data = {
-            "company": company_name,
-            "external_id": external_id,
-            "title": title,
-            "location": location_name,
-            "url": job_url,
-            "seniority": seniority,
-            "function": function,
-            "region": region,
-            "is_remote": is_remote,
-            "is_japan": is_japan,
-        }
-
-        upsert_job(job_data)
-
-    mark_removed_jobs(company_name, seen_ids)
-
-    print(f"✅ Finished {company_name}")
+  
+def scrape_miro():
+    scrape_nextjs_company(
+        company_name="Miro",
+        careers_url="https://miro.com/careers/open-positions/",
+        json_page_path="open-positions",
+        locale="en"
+    )
 
 # -----------------------------------
 # Ashby
