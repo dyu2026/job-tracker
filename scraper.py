@@ -104,19 +104,17 @@ def scrape_nextjs_company(
     # Step 2: Fetch JSON data
     # -------------------------
     parsed = urlparse(careers_url)
-
-    # Remove trailing slash
-    path = parsed.path.rstrip("/")
-
-    # Remove the last segment (page slug)
-    base_path = "/".join(path.split("/")[:-1])
-
     root = f"{parsed.scheme}://{parsed.netloc}"
 
-    json_url = (
-        f"{root}{base_path}/_next/data/"
-        f"{build_id}/{locale}/{json_page_path}.json"
-    )
+    # Special case for Miro
+    if company_name.lower() == "miro":
+        json_url = f"{root}/careers/_next/data/{build_id}/{locale}/{json_page_path}.json"
+    else:
+        # Generic for other Next.js companies
+        # Remove trailing slash and last segment
+        path = parsed.path.rstrip("/")
+        base_path = "/".join(path.split("/")[:-1])
+        json_url = f"{root}{base_path}/_next/data/{build_id}/{locale}/{json_page_path}.json"
 
     print(f"📡 Fetching JSON: {json_url}")
 
@@ -190,11 +188,29 @@ def scrape_nextjs_company(
         else:
             location_name = location_obj or ""
 
-        job_url = (
-            job.get("absolute_url")
-            or job.get("url")
-            or job.get("applyUrl")
-        )
+        # --- Determine job URL ---
+        job_url = None
+
+        # 1. Try top-level absolute_url
+        if "absolute_url" in job and job["absolute_url"]:
+            # Make full URL if relative
+            if job["absolute_url"].startswith("/"):
+                job_url = f"https://miro.com{job['absolute_url']}"
+            else:
+                job_url = job["absolute_url"]
+
+        # 2. Try other known fields
+        elif "url" in job and job["url"]:
+            job_url = job["url"]
+        elif "applyUrl" in job and job["applyUrl"]:
+            job_url = job["applyUrl"]
+
+        # 3. Fallback: if still None, build from external_id (Miro pattern)
+        if not job_url:
+            job_url = f"https://miro.com/careers/open-positions/{job.get('id')}"
+
+        # Optional: print for debugging
+        # print(f"{title} -> {job_url}")
 
         if not title or not external_id:
             continue
