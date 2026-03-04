@@ -661,7 +661,6 @@ if __name__ == "__main__":
     scrape_greenhouse("nothing", "Nothing")
     scrape_greenhouse("phrase", "Phrase")
     scrape_greenhouse("okta", "Okta")
-    scrape_greenhouse("oktajp", "Okta JP")
 
     scrape_ashby("notion", "Notion")
     scrape_ashby("duck-duck-go", "DuckDuckGo")
