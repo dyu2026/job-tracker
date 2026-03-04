@@ -320,12 +320,76 @@ def scrape_workday(company_slug, company_name, location_id):
 
     mark_removed_jobs(company_name, seen_ids)
  
+# -----------------------------------
+# Lever/Spotify
+# -----------------------------------
+ 
+def scrape_lever(company_slug, company_name):
+    url = f"https://api.lever.co/v0/postings/{company_slug}?mode=json"
+
+    response = requests.get(url, timeout=15)
+    if response.status_code != 200:
+        print(f"Failed Lever fetch for {company_name}")
+        return
+
+    jobs = response.json()
+    seen_ids = set()
+    now = datetime.now(UTC)
+
+    for job in jobs:
+
+        title = job.get("text", "")
+        external_id = job.get("id")
+        location_name = (
+            job.get("categories", {}).get("location", "") or ""
+        )
+        workplace_type = job.get("workplaceType", "")
+
+        # Combine workplaceType if remote
+        if workplace_type == "remote" and "remote" not in location_name.lower():
+            location_name = f"Remote, {location_name}".strip(", ")
+
+        region, is_remote, is_japan, remote_scope = classify_location(location_name)
+
+        # Apply eligibility filter
+        if not (
+            is_japan
+            or remote_scope in ["global", "apac", "japan"]
+        ):
+            continue
+
+        job_data = {
+            "company": company_name,
+            "external_id": external_id,
+            "title": title,
+            "location": location_name,
+            "url": job.get("hostedUrl"),
+            "seniority": None,
+            "function": None,
+            "region": region,
+            "is_remote": is_remote,
+            "is_japan": is_japan,
+            "remote_scope": remote_scope,
+            "last_seen_at": now.isoformat(),
+        }
+
+        supabase.table("jobs").upsert(
+            job_data,
+            on_conflict="company,external_id"
+        ).execute()
+
+        seen_ids.add(external_id)
+
+    mark_removed_jobs(company_name, seen_ids)
+
+    print(f"Lever scrape complete for {company_name}")
 
 # -----------------------------------
 # MAIN
 # -----------------------------------
 
 if __name__ == "__main__":
+ 
     scrape_greenhouse("brave", "Brave")
     scrape_greenhouse("gitlab", "GitLab")
     scrape_greenhouse("figma", "Figma")
@@ -352,3 +416,5 @@ if __name__ == "__main__":
         "Workday",
         location_id="9248082dd0ba104584ac4b3d9356363b"
     )
+    
+    scrape_lever("spotify", "Spotify")
