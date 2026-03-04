@@ -2,6 +2,8 @@ from utils import classify_job, classify_location
 import requests
 from supabase_client import supabase
 from datetime import datetime, UTC
+import json
+from bs4 import BeautifulSoup
 
 
 # -----------------------------------
@@ -383,6 +385,88 @@ def scrape_lever(company_slug, company_name):
     mark_removed_jobs(company_name, seen_ids)
 
     print(f"Lever scrape complete for {company_name}")
+    
+# -----------------------------------
+# Monday.com
+# -----------------------------------
+    
+def scrape_monday(company_name="monday.com"):
+
+    url = "https://monday.com/careers"
+
+    print(f"Scraping {company_name}...")
+
+    try:
+        response = requests.get(url, timeout=20)
+        response.raise_for_status()
+    except Exception as e:
+        print(f"❌ Failed to fetch {company_name}: {e}")
+        return
+
+    soup = BeautifulSoup(response.text, "html.parser")
+    script_tag = soup.find("script", {"id": "__NEXT_DATA__"})
+
+    if not script_tag:
+        print("❌ __NEXT_DATA__ not found.")
+        return
+
+    data = json.loads(script_tag.string)
+
+    dynamic_data = data.get("props", {}).get("pageProps", {}).get("dynamicData", {})
+
+    if not dynamic_data:
+        print("❌ dynamicData not found.")
+        return
+
+    container_key = list(dynamic_data.keys())[0]
+    positions = dynamic_data[container_key].get("positions", [])
+
+    print(f"Found {len(positions)} jobs for {company_name}")
+
+    seen_ids = set()
+
+    for job in positions:
+        title = job.get("name")
+        external_id = job.get("uid")
+
+        if not title or not external_id:
+            continue
+
+        location_name = job.get("location", {}).get("name", "")
+        job_url = job.get("url_active_page")
+
+        # --- Classification ---
+        seniority, function = classify_job(title)
+        region, is_remote, is_japan, remote_scope = classify_location(location_name)
+
+        # --- Geography filter ---
+        if not (
+            is_japan
+            or remote_scope in ["global", "apac", "japan"]
+        ):
+            continue
+
+        external_id = str(external_id)
+        seen_ids.add(external_id)
+
+        job_data = {
+            "company": company_name,
+            "external_id": external_id,
+            "title": title,
+            "location": location_name,
+            "url": job_url,
+            "seniority": seniority,
+            "function": function,
+            "region": region,
+            "is_remote": is_remote,
+            "is_japan": is_japan,
+        }
+
+        upsert_job(job_data)
+
+    mark_removed_jobs(company_name, seen_ids)
+
+    print(f"✅ Finished {company_name}")
 
 # -----------------------------------
 # MAIN
@@ -390,6 +474,7 @@ def scrape_lever(company_slug, company_name):
 
 if __name__ == "__main__":
  
+    scrape_monday()
     scrape_greenhouse("brave", "Brave")
     scrape_greenhouse("gitlab", "GitLab")
     scrape_greenhouse("figma", "Figma")
