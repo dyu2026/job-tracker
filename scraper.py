@@ -207,7 +207,7 @@ def scrape_nextjs_company(
 
         # 3. Fallback: if still None, build from external_id (Miro pattern)
         if not job_url:
-            job_url = f"https://miro.com/careers/open-positions/{job.get('id')}"
+            job_url = f"https://miro.com/careers/vacancy/{job.get('id')}"
 
         # Optional: print for debugging
         # print(f"{title} -> {job_url}")
