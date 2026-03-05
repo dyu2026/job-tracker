@@ -432,6 +432,19 @@ def scrape_workday(company_slug, company_name, location_id):
     }
 
     PAGE_SIZE = 20
+    MAX_OFFSET = 200
+    total_jobs = 0
+    seen_ids = set()
+
+    def is_japan_override(location_name, external_path):
+        """
+        Handle ambiguous Workday locationsText like '2 Locations'.
+        If external_path mentions Japan, treat as Japan job.
+        """
+        if location_name.lower() in ["2 locations", "multiple locations"]:
+            if external_path and "japan" in external_path.lower():
+                return True
+        return False
 
     payload = {
         "appliedFacets": {
@@ -441,10 +454,6 @@ def scrape_workday(company_slug, company_name, location_id):
         "offset": 0,
         "searchText": ""
     }
-
-    MAX_OFFSET = 200
-    total_jobs = 0
-    seen_ids = set()
 
     while True:
         if payload["offset"] > MAX_OFFSET:
@@ -473,20 +482,28 @@ def scrape_workday(company_slug, company_name, location_id):
         for job in jobs:
             title = job.get("title", "")
             external_path = job.get("externalPath")
-            
+
             # Correctly get the real locations
             if job.get("locations"):
                 location_name = " / ".join(loc.get("locationName", "") for loc in job["locations"])
             else:
                 location_name = job.get("locationsText", "")
 
+            # Check override for ambiguous locations
+            override_japan = is_japan_override(location_name, external_path)
+
             seniority, function = classify_job(title)
             region, is_remote, is_japan, remote_scope = classify_location(location_name)
 
-            if not (is_japan or remote_scope in ["global", "apac", "japan"]):
-            #    print(f"Skipping job '{title}' due to location: {location_name}")
-                continue
+            # Apply override
+            if override_japan:
+                is_japan = True
+                remote_scope = "japan"
 
+            # Filter
+            if not (is_japan or remote_scope in ["global", "apac", "japan"]):
+                # print(f"Skipping job '{title}' due to location: {location_name}")
+                continue
 
             external_id = external_path
             seen_ids.add(external_id)
@@ -494,7 +511,7 @@ def scrape_workday(company_slug, company_name, location_id):
             job_data = {
                 "company": company_name,
                 "external_id": external_id,
-                "title": job.get("title"),
+                "title": title,
                 "location": location_name,
                 "url": f"https://{subdomain}.wd5.myworkdayjobs.com/ja-JP/{tenant}{external_path}",
                 "seniority": seniority,
@@ -513,7 +530,6 @@ def scrape_workday(company_slug, company_name, location_id):
         payload["offset"] += PAGE_SIZE
 
     print(f"Total jobs found for {company_name}: {total_jobs}")
-
     mark_removed_jobs(company_name, seen_ids)
  
 # -----------------------------------
