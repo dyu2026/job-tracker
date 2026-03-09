@@ -790,6 +790,7 @@ if __name__ == "__main__":
     scrape_ashby("duck-duck-go", "DuckDuckGo")
     scrape_ashby("deepl", "DeepL")
     scrape_ashby("lilt-corporate", "Lilt")
+    scrape_ashby("perplexity", "Perplexity")
 
     scrape_smartrecruiters("Canva", "Canva")
 
