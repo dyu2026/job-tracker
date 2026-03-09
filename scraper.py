@@ -796,6 +796,7 @@ if __name__ == "__main__":
     scrape_ashby("sierra", "Sierra")
 
     scrape_smartrecruiters("Canva", "Canva")
+    scrape_smartrecruiters("wise", "Wise")    
 
     scrape_workday(
         "disney|disneycareer",
