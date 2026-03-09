@@ -420,16 +420,23 @@ def scrape_smartrecruiters(company_slug, company_name):
 # -----------------------------------
 
 def scrape_workday(company_slug, company_name, location_ids=None):
-    subdomain, tenant = company_slug.split("|")
 
-    url = f"https://{subdomain}.wd5.myworkdayjobs.com/wday/cxs/{subdomain}/{tenant}/jobs"
+    parts = company_slug.split("|")
+
+    if len(parts) == 3:
+        subdomain, tenant, cluster = parts
+    else:
+        subdomain, tenant = parts
+        cluster = "wd5"  # default for most companies
+
+    url = f"https://{subdomain}.{cluster}.myworkdayjobs.com/wday/cxs/{subdomain}/{tenant}/jobs"
 
     headers = {
         "Content-Type": "application/json",
         "Accept": "application/json",
         "User-Agent": "Mozilla/5.0",
-        "Origin": f"https://{subdomain}.wd5.myworkdayjobs.com",
-        "Referer": f"https://{subdomain}.wd5.myworkdayjobs.com/"
+        "Origin": f"https://{subdomain}.{cluster}.myworkdayjobs.com",
+        "Referer": f"https://{subdomain}.{cluster}.myworkdayjobs.com/"
     }
 
     PAGE_SIZE = 20
@@ -437,15 +444,10 @@ def scrape_workday(company_slug, company_name, location_ids=None):
     total_jobs = 0
     seen_ids = set()
 
-    # Allow passing single location id or list
     if location_ids and not isinstance(location_ids, list):
         location_ids = [location_ids]
 
     def is_japan_override(location_name, external_path):
-        """
-        Handle ambiguous Workday locationsText like '2 Locations'.
-        If external_path mentions Japan, treat as Japan job.
-        """
         if location_name.lower() in ["2 locations", "multiple locations"]:
             if external_path and "japan" in external_path.lower():
                 return True
@@ -458,11 +460,11 @@ def scrape_workday(company_slug, company_name, location_ids=None):
         "appliedFacets": {}
     }
 
-    # Apply location filter if provided
     if location_ids:
         payload["appliedFacets"]["locations"] = location_ids
 
     while True:
+
         if payload["offset"] > MAX_OFFSET:
             print("Safety break triggered")
             break
@@ -487,10 +489,10 @@ def scrape_workday(company_slug, company_name, location_ids=None):
         print(f"{company_name}: fetched {len(jobs)} jobs at offset {payload['offset']}")
 
         for job in jobs:
+
             title = job.get("title", "")
             external_path = job.get("externalPath")
 
-            # Correctly get the real locations
             if job.get("locations"):
                 location_name = " / ".join(
                     loc.get("locationName", "") for loc in job["locations"]
@@ -498,18 +500,15 @@ def scrape_workday(company_slug, company_name, location_ids=None):
             else:
                 location_name = job.get("locationsText", "")
 
-            # Check override for ambiguous locations
             override_japan = is_japan_override(location_name, external_path)
 
             seniority, function = classify_job(title)
             region, is_remote, is_japan, remote_scope = classify_location(location_name)
 
-            # Apply override
             if override_japan:
                 is_japan = True
                 remote_scope = "japan"
 
-            # Filter
             if not (is_japan or remote_scope in ["global", "apac", "japan"]):
                 continue
 
@@ -521,7 +520,7 @@ def scrape_workday(company_slug, company_name, location_ids=None):
                 "external_id": external_id,
                 "title": title,
                 "location": location_name,
-                "url": f"https://{subdomain}.wd5.myworkdayjobs.com/ja-JP/{tenant}{external_path}",
+                "url": f"https://{subdomain}.{cluster}.myworkdayjobs.com/en-US/{tenant}{external_path}",
                 "seniority": seniority,
                 "function": function,
                 "region": region,
@@ -812,6 +811,12 @@ if __name__ == "__main__":
             "91336993fab910af6d6f9a47b91cc19e",  # Tokyo
             "b00b3256ed551015d42d2bebe06b02b7"   # Japan Remote
         ]
+    )
+    
+    scrape_workday(
+        "mastercard|CorporateCareers|wd1",
+        "Mastercard",
+        location_ids="8eab563831bf10acbe1cda510e782135"
     )
     
     scrape_lever("spotify", "Spotify")
