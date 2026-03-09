@@ -1,9 +1,10 @@
 from utils import classify_job, classify_location
-import requests, json
+import requests, json, feedparser, re
 from supabase_client import supabase
-from datetime import datetime, UTC
+from datetime import datetime, UTC, timedelta, timezone
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse
+import urllib.parse
 
 
 # -----------------------------------
@@ -677,6 +678,87 @@ def scrape_monday(company_name="monday.com"):
     mark_removed_jobs(company_name, seen_ids)
 
     print(f"✅ Finished {company_name}")
+ 
+# -----------------------------------
+# LinkedIn RSS feed for posts
+# -----------------------------------
+
+INC_KEYWORDS = [
+    "hiring","opportunity","job","recruitment","talent",
+    "bilingual","director","career","positions","募集",
+    "roles","role","we are hiring","join our team"
+]
+
+EXC_KEYWORDS = [
+    "excited to announce","i’m happy to share","started a new position",
+    "looking for a new role","i am looking","please help me find"
+]
+
+def matches_filters(text):
+    text = text.lower()
+    has_hiring_signal = any(k in text for k in INC_KEYWORDS)
+    is_not_seeker = not any(k in text for k in EXC_KEYWORDS)
+    return has_hiring_signal and is_not_seeker
+
+
+def extract_linkedin_url(summary):
+    match = re.search(r'href="(https://www.linkedin.com/posts/[^"]+)"', summary)
+    return match.group(1) if match else None
+
+def scrape_linkedin():
+
+    DAYS_TO_PULL = 14
+
+    QUERY = f'site:linkedin.com/posts (hiring OR recruiting OR "now hiring" OR "募集" OR "求人") Japan when:{DAYS_TO_PULL}d'
+    ENCODED_QUERY = urllib.parse.quote(QUERY)
+
+    RSS_URL = f"https://news.google.com/rss/search?q={ENCODED_QUERY}&hl=en-JP&gl=JP&ceid=JP:en"
+
+    feed = feedparser.parse(RSS_URL)
+
+    cutoff = datetime.now(timezone.utc) - timedelta(days=DAYS_TO_PULL)
+
+    print(f"LinkedIn feed entries: {len(feed.entries)}")
+
+    # Clean old entries
+    supabase.table("linkedin_posts") \
+        .delete() \
+        .lt("published_at", cutoff.isoformat()) \
+        .execute()
+
+    for entry in feed.entries:
+
+        if not hasattr(entry, "published_parsed") or entry.published_parsed is None:
+            continue
+
+        published_utc = datetime(*entry.published_parsed[:6], tzinfo=timezone.utc)
+
+        if published_utc < cutoff:
+            continue
+
+        title = entry.title
+        summary = entry.get("summary", "")
+
+        combined_text = title + " " + summary
+
+        if not matches_filters(combined_text):
+            continue
+
+        url = extract_linkedin_url(summary) or entry.link
+        snippet = re.sub("<.*?>", "", summary)
+
+        data = {
+            "title": title,
+            "url": url,
+            "snippet": snippet,
+            "published_at": published_utc.isoformat(),
+        }
+
+        supabase.table("linkedin_posts") \
+            .upsert(data, on_conflict="url") \
+            .execute()
+
+    print("LinkedIn RSS scrape complete")
 
 # -----------------------------------
 # MAIN
@@ -717,4 +799,5 @@ if __name__ == "__main__":
     )
     
     scrape_lever("spotify", "Spotify")
+    scrape_linkedin()
     
