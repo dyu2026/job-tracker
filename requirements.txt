@@ -3,3 +3,5 @@ supabase
 datetime
 beautifulsoup4
 lxml
+feedparser
+python-dotenv
