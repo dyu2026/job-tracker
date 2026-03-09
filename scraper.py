@@ -786,7 +786,8 @@ if __name__ == "__main__":
     scrape_greenhouse("goodnotes", "Goodnotes")
     scrape_greenhouse("asana", "Asana")
     scrape_greenhouse("workato", "Workato")    
-    scrape_greenhouse("braze", "Braze")  
+    scrape_greenhouse("braze", "Braze")
+    scrape_greenhouse("hubspotjobs", "Hubspot")     
 
     scrape_ashby("notion", "Notion")
     scrape_ashby("duck-duck-go", "DuckDuckGo")
