@@ -419,7 +419,7 @@ def scrape_smartrecruiters(company_slug, company_name):
 # Workday
 # -----------------------------------
 
-def scrape_workday(company_slug, company_name, location_id):
+def scrape_workday(company_slug, company_name, location_ids=None):
     subdomain, tenant = company_slug.split("|")
 
     url = f"https://{subdomain}.wd5.myworkdayjobs.com/wday/cxs/{subdomain}/{tenant}/jobs"
@@ -437,6 +437,10 @@ def scrape_workday(company_slug, company_name, location_id):
     total_jobs = 0
     seen_ids = set()
 
+    # Allow passing single location id or list
+    if location_ids and not isinstance(location_ids, list):
+        location_ids = [location_ids]
+
     def is_japan_override(location_name, external_path):
         """
         Handle ambiguous Workday locationsText like '2 Locations'.
@@ -448,13 +452,15 @@ def scrape_workday(company_slug, company_name, location_id):
         return False
 
     payload = {
-        "appliedFacets": {
-            "locations": [location_id]
-        },
-        "count": PAGE_SIZE,
+        "limit": PAGE_SIZE,
         "offset": 0,
-        "searchText": ""
+        "searchText": "",
+        "appliedFacets": {}
     }
+
+    # Apply location filter if provided
+    if location_ids:
+        payload["appliedFacets"]["locations"] = location_ids
 
     while True:
         if payload["offset"] > MAX_OFFSET:
@@ -478,7 +484,7 @@ def scrape_workday(company_slug, company_name, location_id):
         if not jobs:
             break
 
-        print(f"Fetched {len(jobs)} jobs at offset {payload['offset']}")
+        print(f"{company_name}: fetched {len(jobs)} jobs at offset {payload['offset']}")
 
         for job in jobs:
             title = job.get("title", "")
@@ -486,7 +492,9 @@ def scrape_workday(company_slug, company_name, location_id):
 
             # Correctly get the real locations
             if job.get("locations"):
-                location_name = " / ".join(loc.get("locationName", "") for loc in job["locations"])
+                location_name = " / ".join(
+                    loc.get("locationName", "") for loc in job["locations"]
+                )
             else:
                 location_name = job.get("locationsText", "")
 
@@ -503,7 +511,6 @@ def scrape_workday(company_slug, company_name, location_id):
 
             # Filter
             if not (is_japan or remote_scope in ["global", "apac", "japan"]):
-                # print(f"Skipping job '{title}' due to location: {location_name}")
                 continue
 
             external_id = external_path
@@ -707,7 +714,7 @@ def extract_linkedin_url(summary):
 
 def scrape_linkedin():
 
-    DAYS_TO_PULL = 14
+    DAYS_TO_PULL = 7
 
     QUERY = f'site:linkedin.com/posts (hiring OR recruiting OR "now hiring" OR "募集" OR "求人") Japan when:{DAYS_TO_PULL}d'
     ENCODED_QUERY = urllib.parse.quote(QUERY)
@@ -789,13 +796,22 @@ if __name__ == "__main__":
     scrape_workday(
         "disney|disneycareer",
         "Disney",
-        location_id="4f84d9e8a09701011a72254a71290000"
+        location_ids="4f84d9e8a09701011a72254a71290000"
     )
 
     scrape_workday(
         "workday|Workday",
         "Workday",
-        location_id="9248082dd0ba104584ac4b3d9356363b"
+        location_ids="9248082dd0ba104584ac4b3d9356363b"
+    )
+    
+    scrape_workday(
+        "nvidia|NVIDIAExternalCareerSite",
+        "NVIDIA",
+        location_ids=[
+            "91336993fab910af6d6f9a47b91cc19e",  # Tokyo
+            "b00b3256ed551015d42d2bebe06b02b7"   # Japan Remote
+        ]
     )
     
     scrape_lever("spotify", "Spotify")
