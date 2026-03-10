@@ -1,11 +1,11 @@
 from utils import classify_job, classify_location
-import requests, json, feedparser, re
+import requests, json, feedparser, re, time
 from supabase_client import supabase
 from datetime import datetime, UTC, timedelta, timezone
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse
 import urllib.parse
-
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # -----------------------------------
 # Helper: Upsert With first_seen_at
@@ -775,65 +775,113 @@ def scrape_linkedin():
     print("LinkedIn RSS scrape complete")
 
 # -----------------------------------
+# Parallel Task Runner
+# -----------------------------------
+
+def run_task(func, *args):
+    try:
+        func(*args)
+    except Exception as e:
+        print(f"❌ Error in {func.__name__}: {e}")
+
+# -----------------------------------
 # MAIN
 # -----------------------------------
 
 if __name__ == "__main__":
- 
-    scrape_miro()
-    scrape_monday()
-    scrape_greenhouse("brave", "Brave")
-    scrape_greenhouse("gitlab", "GitLab")
-    scrape_greenhouse("figma", "Figma")
-    scrape_greenhouse("stripe", "Stripe")
-    scrape_greenhouse("anthropic", "Anthropic")
-    scrape_greenhouse("nothing", "Nothing")
-    scrape_greenhouse("phrase", "Phrase")
-    scrape_greenhouse("okta", "Okta")
-    scrape_greenhouse("datadog", "Datadog")
-    scrape_greenhouse("goodnotes", "Goodnotes")
-    scrape_greenhouse("asana", "Asana")
-    scrape_greenhouse("workato", "Workato")    
-    scrape_greenhouse("braze", "Braze")
-    scrape_greenhouse("hubspotjobs", "Hubspot")     
 
-    scrape_ashby("notion", "Notion")
-    scrape_ashby("duck-duck-go", "DuckDuckGo")
-    scrape_ashby("deepl", "DeepL")
-    scrape_ashby("lilt-corporate", "Lilt")
-    scrape_ashby("perplexity", "Perplexity")
-    scrape_ashby("sierra", "Sierra")
+    start_time = time.time()
 
-    scrape_smartrecruiters("Canva", "Canva")
-    scrape_smartrecruiters("wise", "Wise")    
+    tasks = [
 
-    scrape_workday(
-        "disney|disneycareer",
-        "Disney",
-        location_ids="4f84d9e8a09701011a72254a71290000"
-    )
+        # Next.js
+        (scrape_miro,),
+        (scrape_monday,),
 
-    scrape_workday(
-        "workday|Workday",
-        "Workday",
-        location_ids="9248082dd0ba104584ac4b3d9356363b"
-    )
-    
-    scrape_workday(
-        "nvidia|NVIDIAExternalCareerSite",
-        "NVIDIA",
-        location_ids=[
-            "91336993fab910af6d6f9a47b91cc19e",  # Tokyo
-            "b00b3256ed551015d42d2bebe06b02b7"   # Japan Remote
+        # Greenhouse
+        (scrape_greenhouse, "brave", "Brave"),
+        (scrape_greenhouse, "gitlab", "GitLab"),
+        (scrape_greenhouse, "figma", "Figma"),
+        (scrape_greenhouse, "stripe", "Stripe"),
+        (scrape_greenhouse, "anthropic", "Anthropic"),
+        (scrape_greenhouse, "nothing", "Nothing"),
+        (scrape_greenhouse, "phrase", "Phrase"),
+        (scrape_greenhouse, "okta", "Okta"),
+        (scrape_greenhouse, "datadog", "Datadog"),
+        (scrape_greenhouse, "goodnotes", "Goodnotes"),
+        (scrape_greenhouse, "asana", "Asana"),
+        (scrape_greenhouse, "workato", "Workato"),
+        (scrape_greenhouse, "braze", "Braze"),
+        (scrape_greenhouse, "hubspotjobs", "Hubspot"),
+
+        # Ashby
+        (scrape_ashby, "notion", "Notion"),
+        (scrape_ashby, "duck-duck-go", "DuckDuckGo"),
+        (scrape_ashby, "deepl", "DeepL"),
+        (scrape_ashby, "lilt-corporate", "Lilt"),
+        (scrape_ashby, "perplexity", "Perplexity"),
+        (scrape_ashby, "sierra", "Sierra"),
+
+        # SmartRecruiters
+        (scrape_smartrecruiters, "Canva", "Canva"),
+        (scrape_smartrecruiters, "wise", "Wise"),
+
+        # Workday
+        (
+            scrape_workday,
+            "disney|disneycareer",
+            "Disney",
+            "4f84d9e8a09701011a72254a71290000"
+        ),
+
+        (
+            scrape_workday,
+            "workday|Workday",
+            "Workday",
+            "9248082dd0ba104584ac4b3d9356363b"
+        ),
+
+        (
+            scrape_workday,
+            "nvidia|NVIDIAExternalCareerSite",
+            "NVIDIA",
+            [
+                "91336993fab910af6d6f9a47b91cc19e",
+                "b00b3256ed551015d42d2bebe06b02b7"
+            ]
+        ),
+
+        (
+            scrape_workday,
+            "mastercard|CorporateCareers|wd1",
+            "Mastercard",
+            "8eab563831bf10acbe1cda510e782135"
+        ),
+
+        # Lever
+        (scrape_lever, "spotify", "Spotify"),
+
+        # LinkedIn signals
+        (scrape_linkedin,)
+    ]
+
+    MAX_WORKERS = 1
+
+    print(f"\n🚀 Starting parallel scrapers ({MAX_WORKERS} workers)...")
+
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+
+        futures = [
+            executor.submit(run_task, *task)
+            for task in tasks
         ]
-    )
-    
-    scrape_workday(
-        "mastercard|CorporateCareers|wd1",
-        "Mastercard",
-        location_ids="8eab563831bf10acbe1cda510e782135"
-    )
-    
-    scrape_lever("spotify", "Spotify")
-    scrape_linkedin()
+
+        for future in as_completed(futures):
+            future.result()
+
+    end_time = time.time()
+    runtime = round(end_time - start_time, 2)
+
+    print(f"\n✅ All scrapers completed")
+    print(f"⏱ Total runtime: {runtime} seconds")
     
