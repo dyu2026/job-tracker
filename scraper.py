@@ -1,5 +1,5 @@
 from utils import classify_job, classify_location
-import requests, json, feedparser, re, time
+import requests, json, feedparser, re, time, platform
 from supabase_client import supabase
 from datetime import datetime, UTC, timedelta, timezone
 from bs4 import BeautifulSoup
@@ -865,9 +865,14 @@ if __name__ == "__main__":
         (scrape_linkedin,)
     ]
 
-    MAX_WORKERS = 4
+    system = platform.system()
 
-    print(f"\n🚀 Starting parallel scrapers ({MAX_WORKERS} workers)...")
+    if system == "Windows":
+        MAX_WORKERS = 1
+    else:
+        MAX_WORKERS = 4
+
+    print(f"Detected OS: {system} | Using {MAX_WORKERS} workers")
 
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
 
