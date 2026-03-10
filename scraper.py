@@ -427,7 +427,7 @@ def scrape_smartrecruiters(company_slug, company_name):
 # Workday
 # -----------------------------------
 
-def scrape_workday(company_slug, company_name, location_ids=None):
+def scrape_workday(company_slug, company_name, location_ids=None, facet="locations"):
 
     parts = company_slug.split("|")
 
@@ -469,7 +469,7 @@ def scrape_workday(company_slug, company_name, location_ids=None):
     }
 
     if location_ids:
-        payload["appliedFacets"]["locations"] = location_ids
+        payload["appliedFacets"][facet] = location_ids
 
     while True:
 
@@ -860,6 +860,15 @@ if __name__ == "__main__":
             "Mastercard",
             "8eab563831bf10acbe1cda510e782135"
         ),
+        
+        (
+            scrape_workday,
+            "warnerbros|global|wd5",
+            "Warner Bros",
+            "8b705da2becf43cfaccc091da0988ab2",
+            "locationCountry"
+        ),
+      
 
         # Lever
         (scrape_lever, "spotify", "Spotify"),
@@ -875,7 +884,7 @@ if __name__ == "__main__":
     else:
         MAX_WORKERS = 4
 
-    print(f"Detected OS: {system} | Using {MAX_WORKERS} workers")
+    print(f"Detected OS: {system} | Using {MAX_WORKERS} worker(s)")
 
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
 
