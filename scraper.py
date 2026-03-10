@@ -410,7 +410,7 @@ def scrape_smartrecruiters(company_slug, company_name):
             "external_id": external_id,
             "title": title,
             "location": location_name,
-            "url": job.get("ref"),
+            "url": job.get("postingUrl") or job.get("ref"),
             "seniority": seniority,
             "function": function,
             "region": region,
