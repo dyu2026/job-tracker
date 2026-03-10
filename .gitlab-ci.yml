@@ -6,10 +6,17 @@ stages:
 variables:
   PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
 
+cache:
+  key:
+    files:
+      - requirements.txt
+  paths:
+    - .cache/pip
+
 before_script:
   - python --version
   - pip install --upgrade pip
-  - pip install -r requirements.txt
+  - pip install --disable-pip-version-check -r requirements.txt
 
 scrape_jobs:
   stage: scrape
