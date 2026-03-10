@@ -324,10 +324,18 @@ def scrape_ashby(company_slug, company_name):
         title = job.get("title")
         location_name = ""
 
+        # Ashby sometimes uses location
         if isinstance(job.get("location"), dict):
             location_name = job["location"].get("name", "")
+
+        # Sometimes it's just a string
         elif isinstance(job.get("location"), str):
             location_name = job.get("location", "")
+
+        # Many Ashby boards use locations (plural)
+        elif job.get("locations"):
+            location_list = [loc.get("name", "") for loc in job["locations"]]
+            location_name = "; ".join(location_list)
 
         seniority, function = classify_job(title)
         region, is_remote, is_japan, remote_scope = classify_location(location_name)
