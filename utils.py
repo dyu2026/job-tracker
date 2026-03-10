@@ -29,7 +29,7 @@ def classify_location(location_name):
 
     # JAPAN DETECTION
     japan_terms = ["japan", "tokyo", "osaka", "yokohama"]
-    is_japan = any(term in part for part in loc.split("/") for term in japan_terms)
+    is_japan = any(term in loc for term in japan_terms)
 
     # REMOTE DETECTION
     is_remote = "remote" in loc
@@ -61,8 +61,8 @@ def classify_location(location_name):
             remote_scope = "apac"
         elif any(term in loc for term in restricted_keywords):
             remote_scope = "restricted"
-        elif "," in loc or "/" in loc or "-":
-            remote_scope = "restricted"
+#        elif "," in loc or "/" in loc or "-":
+#            remote_scope = "restricted"
         else:
             remote_scope = "global"
     else:
