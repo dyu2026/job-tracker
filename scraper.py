@@ -779,10 +779,13 @@ def scrape_linkedin():
 # -----------------------------------
 
 def run_task(func, *args):
-    try:
-        func(*args)
-    except Exception as e:
-        print(f"❌ Error in {func.__name__}: {e}")
+    for attempt in range(2):
+        try:
+            func(*args)
+            return
+        except Exception as e:
+            if attempt == 1:
+                print(f"❌ Failed {func.__name__}: {e}")
 
 # -----------------------------------
 # MAIN
