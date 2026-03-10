@@ -1,6 +1,6 @@
 requests
+urllib3
 supabase
-datetime
 beautifulsoup4
 lxml
 feedparser
