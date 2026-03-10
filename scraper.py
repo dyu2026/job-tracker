@@ -865,7 +865,7 @@ if __name__ == "__main__":
         (scrape_linkedin,)
     ]
 
-    MAX_WORKERS = 1
+    MAX_WORKERS = 4
 
     print(f"\n🚀 Starting parallel scrapers ({MAX_WORKERS} workers)...")
 
