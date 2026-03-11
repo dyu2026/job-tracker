@@ -28,7 +28,16 @@ def classify_location(location_name):
     loc = location_name.lower().strip()
 
     # JAPAN DETECTION
-    japan_terms = ["japan", "tokyo", "osaka", "yokohama"]
+    japan_terms = [
+    "japan",
+    "jp",
+    "jpn",
+    "tokyo",
+    "osaka",
+    "yokohama",
+    "kanagawa",
+    "chiba"
+    ]
     is_japan = any(term in loc for term in japan_terms)
 
     # REMOTE DETECTION
