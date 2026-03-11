@@ -825,6 +825,7 @@ if __name__ == "__main__":
         (scrape_ashby, "lilt-corporate", "Lilt"),
         (scrape_ashby, "perplexity", "Perplexity"),
         (scrape_ashby, "sierra", "Sierra"),
+        (scrape_ashby, "zapier", "Zapier"),
 
         # SmartRecruiters
         (scrape_smartrecruiters, "Canva", "Canva"),
