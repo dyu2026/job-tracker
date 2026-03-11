@@ -402,7 +402,8 @@ def scrape_smartrecruiters(company_slug, company_name):
             continue
 
 
-        external_id = str(job["id"])
+        job_id = job.get("id")
+        external_id = str(job_id)
         seen_ids.add(external_id)
 
         job_data = {
@@ -410,7 +411,7 @@ def scrape_smartrecruiters(company_slug, company_name):
             "external_id": external_id,
             "title": title,
             "location": location_name,
-            "url": job.get("postingUrl") or job.get("ref"),
+            "url": f"https://jobs.smartrecruiters.com/{company_slug.capitalize()}/{job_id}",
             "seniority": seniority,
             "function": function,
             "region": region,
