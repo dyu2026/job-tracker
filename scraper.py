@@ -835,7 +835,10 @@ if __name__ == "__main__":
             scrape_workday,
             "disney|disneycareer",
             "Disney",
-            "4f84d9e8a09701011a72254a71290000"
+            [
+                "4f84d9e8a09701011a72254a71290000",  # Tokyo
+                "4f84d9e8a09701011a5995833ead0000"   # Chiba
+            ]
         ),
 
         (
