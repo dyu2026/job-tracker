@@ -695,6 +695,102 @@ def scrape_monday(company_name="monday.com"):
     print(f"✅ Finished {company_name}")
  
 # -----------------------------------
+# eightfold.ai
+# -----------------------------------
+ 
+def scrape_eightfold(company_slug, company_name, location, pid):
+
+    import requests
+
+    BASE_URL = f"https://{company_slug}.eightfold.ai/api/apply/v2/jobs"
+
+    PAGE_SIZE = 10
+    MAX_OFFSET = 200
+
+    start = 0
+    total_jobs = 0
+    seen_ids = set()
+
+    while True:
+
+        if start > MAX_OFFSET:
+            print("Safety break triggered")
+            break
+
+        params = {
+            "domain": f"{company_slug}.com",
+            "start": start,
+            "num": PAGE_SIZE,
+            "location": location,
+            "pid": pid,
+            "sort_by": "relevance",
+            "hl": "en",
+            "triggerGoButton": "false"
+        }
+
+        r = requests.get(
+            BASE_URL,
+            params=params,
+            headers={"User-Agent": "Mozilla/5.0"},
+            timeout=30
+        )
+
+        if r.status_code != 200:
+            print(f"Failed for {company_name}: {r.status_code}")
+            break
+
+        data = r.json()
+        jobs = data.get("positions", [])
+
+        if not jobs:
+            break
+
+        print(f"{company_name}: fetched {len(jobs)} jobs at offset {start}")
+
+        for job in jobs:
+
+            title = job.get("name")
+            location_name = job.get("location")
+            external_id = job.get("ats_job_id")
+            url = job.get("canonicalPositionUrl")
+
+            if not external_id:
+                continue
+
+            seen_ids.add(external_id)
+
+            seniority, function = classify_job(title)
+            region, is_remote, is_japan, remote_scope = classify_location(location_name)
+
+            if not (is_japan or remote_scope in ["global", "apac", "japan"]):
+                continue
+
+            job_data = {
+                "company": company_name,
+                "external_id": external_id,
+                "title": title,
+                "location": location_name,
+                "url": url,
+                "seniority": seniority,
+                "function": function,
+                "region": region,
+                "is_remote": is_remote,
+                "is_japan": is_japan
+            }
+
+            upsert_job(job_data)
+            total_jobs += 1
+
+        if len(jobs) < PAGE_SIZE:
+            break
+
+        start += PAGE_SIZE
+
+    print(f"Total jobs found for {company_name}: {total_jobs}")
+
+    mark_removed_jobs(company_name, seen_ids)
+ 
+# -----------------------------------
 # LinkedIn RSS feed for posts
 # -----------------------------------
 
@@ -873,8 +969,16 @@ if __name__ == "__main__":
             "8b705da2becf43cfaccc091da0988ab2",
             "locationCountry"
         ),
+        
+        # eightfold
+        (
+            scrape_eightfold,
+            "aexp",
+            "American Express",
+            "Minato-ku, Tokyo, Japan",
+            "39549064"
+        ),
       
-
         # Lever
         (scrape_lever, "spotify", "Spotify"),
 
