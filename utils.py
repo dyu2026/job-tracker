@@ -46,20 +46,20 @@ def classify_location(location_name):
 
     restricted_keywords = [
         # US
-        "united states", "usa", "us-", "us ", " us", "new york", "san francisco", "seattle",
-        "chicago", "atlanta", "west coast", "north america", "us/ca", "americas",
+        "united states", "usa", "us-", "-us", "us ", " us", "new york", "san francisco", "seattle",
+        "chicago", "atlanta", "west coast", "north america", "us/ca", "americas", "nyc",
         # Canada
         "canada", "toronto", "british columbia",
         # Europe
         "europe", "emea",
         # APAC countries you want excluded
-        "singapore", "sydney", "bangkok", "thailand",
+        "singapore", "sydney", "bangkok", "thailand", "sea",
         # Other countries
         "france", "germany", "ireland", "netherlands",
         "spain", "sweden", "italy", "india", "brazil", "australia",
         "united kingdom", "south korea", "united arab emirates", "uae", "switzerland",
         "poland", "south africa", "mexico", "portugal", "chile", "columbia", "colombia",
-        "LATAM", "amsterdam", "buenos aires", "santiago"
+        "LATAM", "amsterdam", "buenos aires", "santiago", "london"
     ]
 
     if is_japan:
