@@ -972,6 +972,14 @@ if __name__ == "__main__":
             "locationCountry"
         ),
         
+        (
+            scrape_workday,
+            "zoom|zoom",
+            "Zoom",
+            "8b705da2becf43cfaccc091da0988ab2",
+            "locationCountry"
+        ),
+        
         # eightfold
         (
             scrape_eightfold,
