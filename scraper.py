@@ -913,6 +913,7 @@ if __name__ == "__main__":
         (scrape_greenhouse, "workato", "Workato"),
         (scrape_greenhouse, "braze", "Braze"),
         (scrape_greenhouse, "hubspotjobs", "Hubspot"),
+        (scrape_greenhouse, "automatticcareers", "Automattic"),
 
         # Ashby
         (scrape_ashby, "notion", "Notion"),
