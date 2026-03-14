@@ -562,55 +562,56 @@ def scrape_lever(company_slug, company_name):
 
     jobs = response.json()
     seen_ids = set()
-    now = datetime.now(UTC)
 
     for job in jobs:
-
         title = job.get("text", "")
         external_id = job.get("id")
-        location_name = (
-            job.get("categories", {}).get("location", "") or ""
-        )
+        
+        # Lever nesting for location
+        categories = job.get("categories", {})
+        location_name = categories.get("location", "") or ""
         workplace_type = job.get("workplaceType", "")
 
-        # Combine workplaceType if remote
+        # Combine workplaceType if remote to help classify_location
         if workplace_type == "remote" and "remote" not in location_name.lower():
             location_name = f"Remote, {location_name}".strip(", ")
 
+        # --- 1. Use your classifiers ---
+        seniority, function = classify_job(title)
         region, is_remote, is_japan, remote_scope = classify_location(location_name)
 
-        # Apply eligibility filter
+        # --- 2. Apply your standard eligibility filter ---
         if not (
             is_japan
             or remote_scope in ["global", "apac", "japan"]
         ):
             continue
 
+        external_id = str(external_id)
+        seen_ids.add(external_id)
+
+        # --- 3. Build the standardized job_data dictionary ---
         job_data = {
             "company": company_name,
             "external_id": external_id,
             "title": title,
             "location": location_name,
             "url": job.get("hostedUrl"),
-            "seniority": None,
-            "function": None,
-            "region": region,
+            "seniority": seniority,  # Now correctly classified
+            "function": function,    # Now correctly classified
+            "region": region,        # Extracted from classify_location
             "is_remote": is_remote,
             "is_japan": is_japan,
             "remote_scope": remote_scope,
-            "last_seen_at": now.isoformat(),
         }
 
-        supabase.table("jobs").upsert(
-            job_data,
-            on_conflict="company,external_id"
-        ).execute()
+        # --- 4. Use the helper function to handle first_seen_at ---
+        upsert_job(job_data)
 
-        seen_ids.add(external_id)
-
+    # --- 5. Mark removed jobs ---
     mark_removed_jobs(company_name, seen_ids)
 
-    print(f"Lever scrape complete for {company_name}")
+    print(f"✅ Lever scrape complete for {company_name}")
     
 # -----------------------------------
 # Monday.com
