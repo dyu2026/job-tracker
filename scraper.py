@@ -922,6 +922,75 @@ def scrape_bamboohr(subdomain, company_name):
     print(f"✅ BambooHR scrape complete for {company_name}")
 
 # -----------------------------------
+# Netflix
+# -----------------------------------
+
+def scrape_netflix():
+
+    company_name = "Netflix"
+
+    url = "https://explore.jobs.netflix.net/api/apply/v2/jobs/790302851017/jobs?domain=netflix.com"
+
+    print(f"\nScraping {company_name}...")
+
+    try:
+        r = requests.get(url, timeout=20)
+        r.raise_for_status()
+        data = r.json()
+    except Exception as e:
+        print(f"❌ Failed Netflix scrape: {e}")
+        return
+
+    jobs = data.get("positions", [])
+
+    print(f"Found {len(jobs)} jobs for {company_name}")
+
+    seen_ids = set()
+
+    for job in jobs:
+
+        pid = job.get("pid") or job.get("id")
+        title = job.get("name")
+        location_name = job.get("location", "")
+
+        if not title or not pid:
+            continue
+
+        seniority, function = classify_job(title)
+        region, is_remote, is_japan, remote_scope = classify_location(location_name)
+
+        if not (
+            is_japan
+            or remote_scope in ["global", "apac", "japan"]
+        ):
+            continue
+
+        external_id = str(pid)
+        seen_ids.add(external_id)
+
+        job_url = f"https://explore.jobs.netflix.net/careers/apply?domain=netflix.com&pid={pid}"
+
+        job_data = {
+            "company": company_name,
+            "external_id": external_id,
+            "title": title,
+            "location": location_name,
+            "url": job_url,
+            "seniority": seniority,
+            "function": function,
+            "region": region,
+            "is_remote": is_remote,
+            "is_japan": is_japan,
+        }
+
+        upsert_job(job_data)
+
+    mark_removed_jobs(company_name, seen_ids)
+
+    print(f"✅ Finished {company_name}")
+
+
+# -----------------------------------
 # LinkedIn RSS feed for posts
 # -----------------------------------
 
@@ -1126,7 +1195,10 @@ if __name__ == "__main__":
         (scrape_lever, "spotify", "Spotify"),
         
         # BambooHR
-        (scrape_bamboohr, "lottiefiles", "LottieFiles"),        
+        (scrape_bamboohr, "lottiefiles", "LottieFiles"),
+
+        # Netflix
+        (scrape_netflix,), 
 
         # LinkedIn signals
         (scrape_linkedin,)
