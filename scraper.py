@@ -7,6 +7,7 @@ import feedparser
 import re
 import time
 import platform
+import urllib.parse
 
 from datetime import datetime, timedelta, timezone, UTC
 from bs4 import BeautifulSoup
