@@ -3,6 +3,9 @@
 A personal project that aggregates publicly available job listings from selected global tech companies and tracks roles relevant to Japan.
 The goal of the project is to monitor new openings from companies with strong product and engineering cultures and maintain a lightweight dashboard to review opportunities.
 
+It is not affiliated with any companies or job platforms.
+The project only accesses publicly available endpoints and does not bypass authentication or paywalls.
+
 ---
 
 ## Motivation
@@ -32,6 +35,7 @@ Currently supported ATS platforms include:
 * SmartRecruiters
 * Ashby
 * Eightfold
+* BambooHR
 
 The scraper collects job metadata such as:
 
