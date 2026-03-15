@@ -22,6 +22,12 @@ The project acts as a small **job intelligence system**, helping surface opportu
 
 ---
 
+## Live Demo
+Streamlit dashboard:
+https://jobdashboard-nhkufxqgmqckb6qxa5caam.streamlit.app/
+
+---
+
 ## Overview
 
 Many companies use different Applicant Tracking Systems to publish job listings.
