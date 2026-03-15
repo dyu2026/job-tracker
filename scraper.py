@@ -790,7 +790,137 @@ def scrape_eightfold(company_slug, company_name, location, pid):
     print(f"Total jobs found for {company_name}: {total_jobs}")
 
     mark_removed_jobs(company_name, seen_ids)
- 
+    
+# -----------------------------------
+# BambooHR
+# -----------------------------------
+
+def scrape_bamboohr(subdomain, company_name):
+
+    url = f"https://{subdomain}.bamboohr.com/careers/list"
+
+    try:
+        response = requests.get(url, timeout=20)
+        response.raise_for_status()
+        data = response.json()
+
+    except Exception as e:
+        print(f"❌ Failed BambooHR fetch for {company_name}: {e}")
+        return
+
+    # -------------------------
+    # Detect job list format
+    # -------------------------
+
+    jobs = []
+
+    if isinstance(data, list):
+        jobs = data
+
+    elif isinstance(data, dict):
+
+        if "result" in data:
+            jobs = data["result"]
+
+        elif "jobs" in data:
+            jobs = data["jobs"]
+
+    print(f"Found {len(jobs)} jobs for {company_name}")
+
+    seen_ids = set()
+
+    for job in jobs:
+
+        # -------------------------
+        # Title detection
+        # -------------------------
+
+        title = (
+            job.get("jobTitle")
+            or job.get("jobOpeningName")
+            or job.get("title")
+            or job.get("name")
+        )
+
+        # -------------------------
+        # ID detection
+        # -------------------------
+
+        external_id = (
+            job.get("id")
+            or job.get("jobId")
+        )
+
+        if not title or not external_id:
+            continue
+
+        external_id = str(external_id)
+
+        # -------------------------
+        # Location parsing
+        # -------------------------
+
+        location_name = ""
+
+        location = job.get("location")
+
+        if isinstance(location, dict):
+
+            city = location.get("city")
+            state = location.get("state")
+
+            parts = [p for p in [city, state] if p]
+
+            if parts:
+                location_name = ", ".join(parts)
+
+        elif isinstance(location, str):
+
+            location_name = location
+
+        if not location_name:
+            location_name = "Remote / Unknown"
+
+        # -------------------------
+        # Job URL
+        # -------------------------
+
+        job_url = f"https://{subdomain}.bamboohr.com/careers/{external_id}"
+
+        # -------------------------
+        # Classification
+        # -------------------------
+
+        seniority, function = classify_job(title)
+        region, is_remote, is_japan, remote_scope = classify_location(location_name)
+
+        if not (
+            is_japan
+            or remote_scope in ["global", "apac", "japan"]
+        ):
+            continue
+
+        seen_ids.add(external_id)
+
+        job_data = {
+            "company": company_name,
+            "external_id": external_id,
+            "title": title,
+            "location": location_name,
+            "url": job_url,
+            "seniority": seniority,
+            "function": function,
+            "region": region,
+            "is_remote": is_remote,
+            "is_japan": is_japan,
+        }
+
+        upsert_job(job_data)
+
+    mark_removed_jobs(company_name, seen_ids)
+
+    print(f"✅ BambooHR scrape complete for {company_name}")
+
 # -----------------------------------
 # LinkedIn RSS feed for posts
 # -----------------------------------
@@ -993,6 +1123,9 @@ if __name__ == "__main__":
       
         # Lever
         (scrape_lever, "spotify", "Spotify"),
+        
+        # BambooHR
+        (scrape_bamboohr, "lottiefiles", "LottieFiles"),        
 
         # LinkedIn signals
         (scrape_linkedin,)
