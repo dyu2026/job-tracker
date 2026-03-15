@@ -929,68 +929,80 @@ def scrape_bamboohr(subdomain, company_name):
     print(f"✅ BambooHR scrape complete for {company_name}")
 
 # -----------------------------------
-# Netflix
+# Netflix (Japan)
 # -----------------------------------
 
 def scrape_netflix():
 
     company_name = "Netflix"
 
-    url = "https://explore.jobs.netflix.net/api/apply/v2/jobs/790302851017/jobs?domain=netflix.com"
+    base_url = "https://explore.jobs.netflix.net/api/apply/v2/jobs"
+
+    params = {
+        "domain": "netflix.com",
+        "pid": "790302851017",
+        "location": "Tokyo, Japan",
+        "num": 10,
+        "sort_by": "relevance"
+    }
 
     print(f"\nScraping {company_name}...")
 
-    try:
-        r = requests.get(url, timeout=20)
-        r.raise_for_status()
-        data = r.json()
-    except Exception as e:
-        print(f"❌ Failed Netflix scrape: {e}")
-        return
-
-    jobs = data.get("positions", [])
-
-    print(f"Found {len(jobs)} jobs for {company_name}")
-
+    start = 0
     seen_ids = set()
 
-    for job in jobs:
+    while True:
 
-        pid = job.get("pid") or job.get("id")
-        title = job.get("name")
-        location_name = job.get("location", "")
+        params["start"] = start
 
-        if not title or not pid:
-            continue
+        try:
+            r = requests.get(base_url, params=params, timeout=20)
+            r.raise_for_status()
+            data = r.json()
+        except Exception as e:
+            print(f"❌ Failed Netflix scrape: {e}")
+            return
 
-        seniority, function = classify_job(title)
-        region, is_remote, is_japan, remote_scope = classify_location(location_name)
+        jobs = data.get("positions", [])
 
-        if not (
-            is_japan
-            or remote_scope in ["global", "apac", "japan"]
-        ):
-            continue
+        if not jobs:
+            break
 
-        external_id = str(pid)
-        seen_ids.add(external_id)
+        print(f"Processing {len(jobs)} jobs (start={start})")
 
-        job_url = f"https://explore.jobs.netflix.net/careers/apply?domain=netflix.com&pid={pid}"
+        for job in jobs:
 
-        job_data = {
-            "company": company_name,
-            "external_id": external_id,
-            "title": title,
-            "location": location_name,
-            "url": job_url,
-            "seniority": seniority,
-            "function": function,
-            "region": region,
-            "is_remote": is_remote,
-            "is_japan": is_japan,
-        }
+            job_id = job.get("id")
+            title = job.get("name")
+            location_name = job.get("location", "")
 
-        upsert_job(job_data)
+            if not job_id or not title:
+                continue
+
+            external_id = str(job_id)
+            seen_ids.add(external_id)
+
+            seniority, function = classify_job(title)
+            region, is_remote, is_japan, remote_scope = classify_location(location_name)
+
+            job_url = f"https://explore.jobs.netflix.net/careers/apply?domain=netflix.com&pid={external_id}"
+
+            job_data = {
+                "company": company_name,
+                "external_id": external_id,
+                "title": title,
+                "location": location_name,
+                "url": job_url,
+                "seniority": seniority,
+                "function": function,
+                "region": region,
+                "is_remote": is_remote,
+                "is_japan": is_japan,
+            }
+
+            upsert_job(job_data)
+
+        start += params["num"]
 
     mark_removed_jobs(company_name, seen_ids)
 
