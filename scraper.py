@@ -1,10 +1,16 @@
 from utils import classify_job, classify_location
-import requests, json, feedparser, re, time, platform
 from supabase_client import supabase
-from datetime import datetime, UTC, timedelta, timezone
+
+import requests
+import json
+import feedparser
+import re
+import time
+import platform
+
+from datetime import datetime, timedelta, timezone
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse
-import urllib.parse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # -----------------------------------
