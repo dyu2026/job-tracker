@@ -1046,6 +1046,7 @@ if __name__ == "__main__":
         (scrape_greenhouse, "hubspotjobs", "Hubspot"),
         (scrape_greenhouse, "automatticcareers", "Automattic"),
         (scrape_greenhouse, "unity3d", "Unity"),
+        (scrape_greenhouse, "storyblok", "Storyblok"),
 
         # Ashby
         (scrape_ashby, "notion", "Notion"),
