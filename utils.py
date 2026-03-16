@@ -55,7 +55,7 @@ def classify_location(location_name):
         "united kingdom", "south korea", "united arab emirates", "uae", "switzerland",
         "poland", "south africa", "mexico", "portugal", "chile", "columbia", "colombia",
         "LATAM", "amsterdam", "buenos aires", "santiago", "london", "stockholm", "belgium",
-        "denmark", "lithuania", "peru", "ecuador"
+        "denmark", "lithuania", "peru", "ecuador", "costa rica", "el salvador"
     ]
 
     if is_japan:
