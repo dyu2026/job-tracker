@@ -1203,6 +1203,17 @@ if __name__ == "__main__":
             "locationCountry"
         ),
         
+        (
+            scrape_workday,
+            "cisco|Cisco_Careers",
+            "Cisco",
+            [
+                "1cf8ea09530d1001f4c5c40ec3720000",
+                "f5adf8182d281001f842e5b0f10b0000",
+                "662e524adea41001f4d1611409bb0000"
+            ]
+        ),
+        
         # eightfold
         (
             scrape_eightfold,
