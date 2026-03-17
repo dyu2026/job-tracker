@@ -1039,7 +1039,7 @@ def scrape_linkedin():
 
     DAYS_TO_PULL = 7
 
-    QUERY = f'site:linkedin.com/posts (hiring OR recruiting OR "now hiring" OR "募集" OR "求人") Japan when:{DAYS_TO_PULL}d'
+    QUERY = f'site:linkedin.com/posts (hiring OR recruiting OR "now hiring" OR "募集" OR "求人" OR newopportunity) Japan when:{DAYS_TO_PULL}d'
     ENCODED_QUERY = urllib.parse.quote(QUERY)
 
     RSS_URL = f"https://news.google.com/rss/search?q={ENCODED_QUERY}&hl=en-JP&gl=JP&ceid=JP:en"
@@ -1136,6 +1136,7 @@ if __name__ == "__main__":
         (scrape_greenhouse, "unity3d", "Unity"),
         (scrape_greenhouse, "storyblok", "Storyblok"),
         (scrape_greenhouse, "speechify", "Speechify"),
+        (scrape_greenhouse, "grafanalabs", "Grafana"),
 
         # Ashby
         (scrape_ashby, "notion", "Notion"),
