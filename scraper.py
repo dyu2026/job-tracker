@@ -380,34 +380,65 @@ def scrape_ashby(company_slug, company_name):
 # -----------------------------------
 
 def scrape_smartrecruiters(company_slug, company_name):
-    url = f"https://api.smartrecruiters.com/v1/companies/{company_slug}/postings"
-    response = requests.get(url)
-    data = response.json()
+    all_jobs = []
+    offset = 0
+    limit = 100
 
-    jobs = data.get("content", [])
-    print(f"Found {len(jobs)} jobs for {company_name}")
+    # -----------------------------------
+    # 1. PAGINATION (FIX)
+    # -----------------------------------
+    while True:
+        url = f"https://api.smartrecruiters.com/v1/companies/{company_slug}/postings?limit={limit}&offset={offset}"
+        response = requests.get(url)
+        data = response.json()
+
+        jobs = data.get("content", [])
+        if not jobs:
+            break
+
+        all_jobs.extend(jobs)
+        offset += limit
+
+    print(f"Found {len(all_jobs)} jobs for {company_name}")
 
     seen_ids = set()
 
-    for job in jobs:
-        title = job.get("name")
-        loc = job.get("location", {})
+    # -----------------------------------
+    # 2. PROCESS JOBS
+    # -----------------------------------
+    for job in all_jobs:
+        title = job.get("name", "")
+
+        loc = job.get("location") or {}
 
         city = loc.get("city", "")
         region_name = loc.get("region", "")
         country = loc.get("country", "")
 
-        location_name = " ".join([city, region_name, country])
+        # Cleaner location formatting
+        location_parts = [city, region_name, country]
+        location_name = ", ".join([p for p in location_parts if p])
 
         seniority, function = classify_job(title)
+
+        # -----------------------------------
+        # 3. SAFER LOCATION CLASSIFICATION
+        # -----------------------------------
         region, is_remote, is_japan, remote_scope = classify_location(location_name)
 
+        # 🔥 TEMP DEBUG (you should keep this for now)
+        # print(company_name, location_name, is_japan, remote_scope)
+
+        # -----------------------------------
+        # 4. RELAX FILTER (FIX FOR WISE)
+        # -----------------------------------
         if not (
             is_japan
             or remote_scope in ["global", "apac", "japan"]
+            or "japan" in location_name.lower()
+            or "tokyo" in location_name.lower()
         ):
             continue
-
 
         job_id = job.get("id")
         external_id = str(job_id)
