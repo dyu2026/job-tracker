@@ -1212,7 +1212,6 @@ if __name__ == "__main__":
         (scrape_greenhouse, "phrase", "Phrase"),
         (scrape_greenhouse, "okta", "Okta"),
         (scrape_greenhouse, "datadog", "Datadog"),
-        (scrape_greenhouse, "goodnotes", "Goodnotes"),
         (scrape_greenhouse, "asana", "Asana"),
         (scrape_greenhouse, "workato", "Workato"),
         (scrape_greenhouse, "braze", "Braze"),
