@@ -54,7 +54,7 @@ def classify_location(location_name):
         "spain", "sweden", "italy", "india", "brazil", "australia",
         "united kingdom", "south korea", "united arab emirates", "uae", "switzerland",
         "poland", "south africa", "mexico", "portugal", "chile", "columbia", "colombia",
-        "LATAM", "amsterdam", "buenos aires", "santiago", "london", "stockholm", "belgium",
+        "latam", "amsterdam", "buenos aires", "santiago", "london", "stockholm", "belgium",
         "denmark", "lithuania", "peru", "ecuador", "costa rica", "el salvador", "berlin"
     ]
 
