@@ -1258,6 +1258,7 @@ if __name__ == "__main__":
       
         # Lever
         (scrape_lever, "spotify", "Spotify"),
+        (scrape_lever, "superside", "Superside"),
         
         # BambooHR
         (scrape_bamboohr, "lottiefiles", "LottieFiles"),
