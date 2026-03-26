@@ -1167,16 +1167,27 @@ def scrape_linkedin():
 # -----------------------------------
 
 def run_task(func, *args):
+    # Try to extract company name (usually 2nd arg)
+    company_name = None
+
+    if len(args) >= 2:
+        company_name = args[1]
+    elif len(args) == 1 and isinstance(args[0], str):
+        company_name = args[0]
+    else:
+        company_name = func.__name__
+
     for attempt in range(2):
         try:
+            print(f"🚀 Starting {company_name}")
             func(*args)
+            print(f"✅ Success {company_name}")
             return
         except Exception as e:
-            print(f"⚠️ Retry {func.__name__}: {e}")
+            print(f"⚠️ Retry {attempt+1}/2 for {company_name}: {e}")
             time.sleep(2 * (attempt + 1))
 
-    print(f"❌ Failed {func.__name__}")
-
+    print(f"❌ Failed {company_name} after 2 attempts")
 # -----------------------------------
 # MAIN
 # -----------------------------------
