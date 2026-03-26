@@ -4,6 +4,7 @@ from supabase_client import supabase
 import requests
 import json
 import feedparser
+import random
 import re
 import time
 import platform
@@ -13,6 +14,34 @@ from datetime import datetime, timedelta, timezone, UTC
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+# -----------------------------------
+# Safe Request Wrapper (Retries + Backoff)
+# -----------------------------------
+
+def safe_request(method, url, **kwargs):
+    MAX_RETRIES = 3
+
+    for attempt in range(MAX_RETRIES):
+        try:
+            response = requests.request(method, url, timeout=20, **kwargs)
+
+            if response.status_code == 200:
+                return response
+
+            # 👇 Special handling for Workday 502
+            if response.status_code in [500, 502, 503]:
+                wait = 3 * (attempt + 1)
+                print(f"⚠️ Workday retry {attempt+1}, waiting {wait}s")
+                time.sleep(wait)
+                continue
+
+        except requests.exceptions.RequestException as e:
+            print(f"⚠️ Request error: {e}")
+
+        time.sleep(2 * (attempt + 1))
+
+    return None
 
 # -----------------------------------
 # Helper: Upsert With first_seen_at
@@ -261,7 +290,9 @@ def scrape_nextjs_company(
 
 def scrape_greenhouse(company_slug, company_name):
     url = f"https://boards-api.greenhouse.io/v1/boards/{company_slug}/jobs"
-    response = requests.get(url)
+    response = safe_request("GET", url)
+    if not response:
+        return
     data = response.json()
 
     jobs = data.get("jobs", [])
@@ -319,7 +350,9 @@ def scrape_miro():
 
 def scrape_ashby(company_slug, company_name):
     url = f"https://api.ashbyhq.com/posting-api/job-board/{company_slug}"
-    response = requests.get(url)
+    response = safe_request("GET", url)
+    if not response:
+        return
     data = response.json()
 
     jobs = data.get("jobs", [])
@@ -389,7 +422,9 @@ def scrape_smartrecruiters(company_slug, company_name):
     # -----------------------------------
     while True:
         url = f"https://api.smartrecruiters.com/v1/companies/{company_slug}/postings?limit={limit}&offset={offset}"
-        response = requests.get(url)
+        response = safe_request("GET", url)
+        if not response:
+            return
         data = response.json()
 
         jobs = data.get("content", [])
@@ -481,9 +516,10 @@ def scrape_workday(company_slug, company_name, location_ids=None, facet="locatio
     headers = {
         "Content-Type": "application/json",
         "Accept": "application/json",
-        "User-Agent": "Mozilla/5.0",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
         "Origin": f"https://{subdomain}.{cluster}.myworkdayjobs.com",
-        "Referer": f"https://{subdomain}.{cluster}.myworkdayjobs.com/"
+        "Referer": f"https://{subdomain}.{cluster}.myworkdayjobs.com/en-US/{tenant}",
+        "Connection": "keep-alive",
     }
 
     PAGE_SIZE = 20
@@ -516,13 +552,14 @@ def scrape_workday(company_slug, company_name, location_ids=None, facet="locatio
             print("Safety break triggered")
             break
 
-        response = requests.post(
+        response = safe_request(
+            "POST",
             url,
             json=payload,
-            headers=headers,
-            timeout=15
+            headers=headers
         )
-
+        if not response:
+            break
         if response.status_code != 200:
             print(f"Failed for {company_name}: {response.status_code}")
             break
@@ -582,6 +619,8 @@ def scrape_workday(company_slug, company_name, location_ids=None, facet="locatio
             break
 
         payload["offset"] += PAGE_SIZE
+        
+        time.sleep(random.uniform(1.0, 2.5))
 
     print(f"Total jobs found for {company_name}: {total_jobs}")
     mark_removed_jobs(company_name, seen_ids)
@@ -593,8 +632,9 @@ def scrape_workday(company_slug, company_name, location_ids=None, facet="locatio
 def scrape_lever(company_slug, company_name):
     url = f"https://api.lever.co/v0/postings/{company_slug}?mode=json"
 
-    response = requests.get(url, timeout=15)
-    if response.status_code != 200:
+    response = safe_request("GET", url)
+
+    if not response:
         print(f"Failed Lever fetch for {company_name}")
         return
 
@@ -662,8 +702,7 @@ def scrape_monday(company_name="monday.com"):
     print(f"Scraping {company_name}...")
 
     try:
-        response = requests.get(url, timeout=20)
-        response.raise_for_status()
+        response = safe_request("GET", url)
     except Exception as e:
         print(f"❌ Failed to fetch {company_name}: {e}")
         return
@@ -767,11 +806,11 @@ def scrape_eightfold(company_slug, company_name, location, pid):
             "triggerGoButton": "false"
         }
 
-        r = requests.get(
+        r = safe_request(
+            "GET",
             BASE_URL,
             params=params,
-            headers={"User-Agent": "Mozilla/5.0"},
-            timeout=30
+            headers={"User-Agent": "Mozilla/5.0"}
         )
 
         if r.status_code != 200:
@@ -838,8 +877,8 @@ def scrape_bamboohr(subdomain, company_name):
     url = f"https://{subdomain}.bamboohr.com/careers/list"
 
     try:
-        response = requests.get(url, timeout=20)
-        response.raise_for_status()
+        response = safe_request("GET", url)
+
         data = response.json()
 
     except Exception as e:
@@ -967,7 +1006,7 @@ def scrape_netflix():
 
     company_name = "Netflix"
 
-    base_url = "https://explore.jobs.netflix.net/api/apply/v2/jobs"
+    BASE_URL = "https://explore.jobs.netflix.net/api/apply/v2/jobs"
 
     params = {
         "domain": "netflix.com",
@@ -987,8 +1026,10 @@ def scrape_netflix():
         params["start"] = start
 
         try:
-            r = requests.get(base_url, params=params, timeout=20)
-            r.raise_for_status()
+            r = safe_request("GET", BASE_URL, params=params)
+            if not r:
+                break
+ 
             data = r.json()
         except Exception as e:
             print(f"❌ Failed Netflix scrape: {e}")
@@ -1131,8 +1172,10 @@ def run_task(func, *args):
             func(*args)
             return
         except Exception as e:
-            if attempt == 1:
-                print(f"❌ Failed {func.__name__}: {e}")
+            print(f"⚠️ Retry {func.__name__}: {e}")
+            time.sleep(2 * (attempt + 1))
+
+    print(f"❌ Failed {func.__name__}")
 
 # -----------------------------------
 # MAIN
