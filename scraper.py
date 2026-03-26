@@ -1169,6 +1169,7 @@ if __name__ == "__main__":
         (scrape_greenhouse, "speechify", "Speechify"),
         (scrape_greenhouse, "grafanalabs", "Grafana"),
         (scrape_greenhouse, "roblox", "Roblox"),
+        (scrape_greenhouse, "airbnb", "Airbnb"),
 
         # Ashby
         (scrape_ashby, "notion", "Notion"),
