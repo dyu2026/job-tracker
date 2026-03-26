@@ -1319,7 +1319,7 @@ if __name__ == "__main__":
     if system == "Windows":
         MAX_WORKERS = 1
     else:
-        MAX_WORKERS = 4
+        MAX_WORKERS = 3
 
     print(f"Detected OS: {system} | Using {MAX_WORKERS} worker(s)")
 
