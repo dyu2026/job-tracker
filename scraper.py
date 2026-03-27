@@ -1223,6 +1223,7 @@ if __name__ == "__main__":
         (scrape_greenhouse, "grafanalabs", "Grafana"),
         (scrape_greenhouse, "roblox", "Roblox"),
         (scrape_greenhouse, "airbnb", "Airbnb"),
+        (scrape_greenhouse, "wrike", "Wrike"),
 
         # Ashby
         (scrape_ashby, "notion", "Notion"),
@@ -1234,6 +1235,7 @@ if __name__ == "__main__":
         (scrape_ashby, "zapier", "Zapier"),
         (scrape_ashby, "supabase", "Supabase"),
         (scrape_ashby, "substack", "Substack"),
+        (scrape_ashby, "kraken.com", "Kraken"),
         
         # SmartRecruiters
         (scrape_smartrecruiters, "Canva", "Canva"),
