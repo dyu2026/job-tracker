@@ -1,3 +1,5 @@
+import re
+
 def classify_job(title):
     title_lower = title.lower()
 
@@ -25,7 +27,7 @@ def classify_location(location_name):
     if not location_name:
         return None, False, False, None
 
-    loc = location_name.lower().strip()
+    loc = re.sub(r'[^a-z0-9\s]', ' ', location_name.lower())
 
     # JAPAN DETECTION
     japan_terms = [
@@ -63,17 +65,23 @@ def classify_location(location_name):
         return "Japan", is_remote, True, "japan"
 
     if is_remote:
-        if any(term in loc for term in ["anywhere", "worldwide", "global"]):
+
+        # ❌ If ANY restricted keyword exists → ALWAYS reject
+        if any(term in loc for term in restricted_keywords):
+            remote_scope = "restricted"
+
+        # ✅ Explicit allowed cases only
+        elif any(term in loc for term in ["anywhere", "worldwide", "global"]):
             remote_scope = "global"
+
         elif "apac" in loc:
             remote_scope = "apac"
-        elif any(term in loc for term in restricted_keywords):
-            remote_scope = "restricted"
-#        elif "," in loc or "/" in loc or "-":
-#            remote_scope = "restricted"
-        else:
+
+        elif loc.strip() == "remote":
             remote_scope = "global"
-    else:
-        remote_scope = "restricted"
+
+        else:
+            # 🚨 DEFAULT = RESTRICTED (important change)
+            remote_scope = "restricted"
 
     return None, is_remote, False, remote_scope
