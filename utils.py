@@ -56,7 +56,7 @@ def classify_location(location_name):
         "poland", "south africa", "mexico", "portugal", "chile", "columbia", "colombia",
         "latam", "amsterdam", "buenos aires", "santiago", "london", "stockholm", "belgium",
         "denmark", "lithuania", "peru", "ecuador", "costa rica", "el salvador", "berlin", "czech republic",
-        "vancouver", "milan", "prague"
+        "vancouver", "milan", "prague", "bangalore"
     ]
 
     if is_japan:
