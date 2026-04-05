@@ -67,6 +67,8 @@ def classify_location(location_name):
             remote_scope = "global"
         elif "apac" in loc:
             remote_scope = "apac"
+        elif "asia" in loc:
+            remote_scope = "apac"        
         elif any(term in loc for term in restricted_keywords):
             remote_scope = "restricted"
         else:
