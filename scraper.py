@@ -1265,6 +1265,7 @@ if __name__ == "__main__":
         (scrape_monday,),
 
         # Greenhouse
+        (scrape_greenhouse, "nansen", "Nansen"),
         (scrape_greenhouse, "brave", "Brave"),
         (scrape_greenhouse, "gitlab", "GitLab"),
         (scrape_greenhouse, "figma", "Figma"),
