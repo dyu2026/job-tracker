@@ -29,7 +29,6 @@ def safe_request(method, url, **kwargs):
             if response.status_code == 200:
                 return response
 
-            # 👇 Special handling for Workday 502
             if response.status_code in [500, 502, 503]:
                 wait = 3 * (attempt + 1)
                 print(f"⚠️ Workday retry {attempt+1}, waiting {wait}s")
@@ -461,9 +460,6 @@ def scrape_smartrecruiters(company_slug, company_name):
         # -----------------------------------
         region, is_remote, is_japan, remote_scope = classify_location(location_name)
 
-        # 🔥 TEMP DEBUG (you should keep this for now)
-        # print(company_name, location_name, is_japan, remote_scope)
-
         # -----------------------------------
         # 4. RELAX FILTER (FIX FOR WISE)
         # -----------------------------------
@@ -657,7 +653,7 @@ def scrape_workday(company_slug, company_name, location_ids=None, facet="locatio
         seen_ids.update(new_ids)
 
         # -----------------------------------
-        # Stop conditions (robust)
+        # Stop conditions 
         # -----------------------------------
 
         # 1. Last page (API)
@@ -665,7 +661,7 @@ def scrape_workday(company_slug, company_name, location_ids=None, facet="locatio
             print("🛑 Last page (len < PAGE_SIZE)")
             break
 
-        # 2. No relevant jobs (important for filtered queries)
+        # 2. No relevant jobs 
         if filtered_count == 0:
             print("🛑 No relevant jobs → stopping")
             break
@@ -707,20 +703,16 @@ def scrape_lever(company_slug, company_name):
         title = job.get("text", "")
         external_id = job.get("id")
         
-        # Lever nesting for location
         categories = job.get("categories", {})
         location_name = categories.get("location", "") or ""
         workplace_type = job.get("workplaceType", "")
 
-        # Combine workplaceType if remote to help classify_location
         if workplace_type == "remote" and "remote" not in location_name.lower():
             location_name = f"Remote, {location_name}".strip(", ")
 
-        # --- 1. Use your classifiers ---
         seniority, function = classify_job(title)
         region, is_remote, is_japan, remote_scope = classify_location(location_name)
 
-        # --- 2. Apply your standard eligibility filter ---
         if not (
             is_japan
             or remote_scope in ["global", "apac", "asia", "japan"]
@@ -730,25 +722,22 @@ def scrape_lever(company_slug, company_name):
         external_id = str(external_id)
         seen_ids.add(external_id)
 
-        # --- 3. Build the standardized job_data dictionary ---
         job_data = {
             "company": company_name,
             "external_id": external_id,
             "title": title,
             "location": location_name,
             "url": job.get("hostedUrl"),
-            "seniority": seniority,  # Now correctly classified
-            "function": function,    # Now correctly classified
-            "region": region,        # Extracted from classify_location
+            "seniority": seniority, 
+            "function": function,
+            "region": region, 
             "is_remote": is_remote,
             "is_japan": is_japan,
             "remote_scope": remote_scope,
         }
 
-        # --- 4. Use the helper function to handle first_seen_at ---
         upsert_job(job_data)
 
-    # --- 5. Mark removed jobs ---
     mark_removed_jobs(company_name, seen_ids)
 
     print(f"✅ Lever scrape complete for {company_name}")
