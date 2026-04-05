@@ -503,38 +503,32 @@ def scrape_smartrecruiters(company_slug, company_name):
 
 def scrape_workday(company_slug, company_name, location_ids=None, facet="locations"):
 
+    # -----------------------------------
+    # Parse slug
+    # -----------------------------------
     parts = company_slug.split("|")
 
     if len(parts) == 3:
         subdomain, tenant, cluster = parts
     else:
         subdomain, tenant = parts
-        cluster = "wd5"  # default for most companies
+        cluster = "wd5"
 
     url = f"https://{subdomain}.{cluster}.myworkdayjobs.com/wday/cxs/{subdomain}/{tenant}/jobs"
 
     headers = {
         "Content-Type": "application/json",
         "Accept": "application/json",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "User-Agent": "Mozilla/5.0",
         "Origin": f"https://{subdomain}.{cluster}.myworkdayjobs.com",
         "Referer": f"https://{subdomain}.{cluster}.myworkdayjobs.com/en-US/{tenant}",
-        "Connection": "keep-alive",
     }
 
+    # -----------------------------------
+    # Config
+    # -----------------------------------
     PAGE_SIZE = 20
     MAX_OFFSET = 200
-    total_jobs = 0
-    seen_ids = set()
-
-    if location_ids and not isinstance(location_ids, list):
-        location_ids = [location_ids]
-
-    def is_japan_override(location_name, external_path):
-        if location_name.lower() in ["2 locations", "multiple locations"]:
-            if external_path and "japan" in external_path.lower():
-                return True
-        return False
 
     payload = {
         "limit": PAGE_SIZE,
@@ -544,12 +538,34 @@ def scrape_workday(company_slug, company_name, location_ids=None, facet="locatio
     }
 
     if location_ids:
+        if not isinstance(location_ids, list):
+            location_ids = [location_ids]
         payload["appliedFacets"][facet] = location_ids
 
+    seen_ids = set()
+    total_jobs = 0
+    page_count = 0
+
+    print(f"\n--- Scraping Workday: {company_name} ---")
+
+    # -----------------------------------
+    # Helper: Japan override
+    # -----------------------------------
+    def is_japan_override(location_name, external_path):
+        if location_name.lower() in ["2 locations", "multiple locations"]:
+            if external_path and "japan" in external_path.lower():
+                return True
+        return False
+
+    # -----------------------------------
+    # Pagination loop
+    # -----------------------------------
     while True:
 
+        print(f"\n➡️ {company_name} | offset: {payload['offset']}")
+
         if payload["offset"] > MAX_OFFSET:
-            print("Safety break triggered")
+            print("🛑 Safety break (MAX_OFFSET)")
             break
 
         response = safe_request(
@@ -558,19 +574,38 @@ def scrape_workday(company_slug, company_name, location_ids=None, facet="locatio
             json=payload,
             headers=headers
         )
+
         if not response:
+            print("❌ No response")
             break
+
         if response.status_code != 200:
-            print(f"Failed for {company_name}: {response.status_code}")
+            print(f"❌ Failed: {response.status_code}")
             break
 
         data = response.json()
         jobs = data.get("jobPostings", [])
+        total = data.get("total")
+
+        print(f"Total (API): {total} | Returned: {len(jobs)}")
 
         if not jobs:
+            print("🛑 No jobs returned")
             break
 
-        print(f"{company_name}: fetched {len(jobs)} jobs at offset {payload['offset']}")
+        # -----------------------------------
+        # Duplicate detection (CRITICAL)
+        # -----------------------------------
+        new_ids = set(job.get("externalPath") for job in jobs)
+
+        if new_ids.issubset(seen_ids):
+            print("🛑 Duplicate page detected")
+            break
+
+        # -----------------------------------
+        # Process jobs
+        # -----------------------------------
+        filtered_count = 0
 
         for job in jobs:
 
@@ -596,12 +631,11 @@ def scrape_workday(company_slug, company_name, location_ids=None, facet="locatio
             if not (is_japan or remote_scope in ["global", "apac", "japan"]):
                 continue
 
-            external_id = external_path
-            seen_ids.add(external_id)
+            filtered_count += 1
 
             job_data = {
                 "company": company_name,
-                "external_id": external_id,
+                "external_id": external_path,
                 "title": title,
                 "location": location_name,
                 "url": f"https://{subdomain}.{cluster}.myworkdayjobs.com/en-US/{tenant}{external_path}",
@@ -615,14 +649,42 @@ def scrape_workday(company_slug, company_name, location_ids=None, facet="locatio
             upsert_job(job_data)
             total_jobs += 1
 
+        print(f"Relevant jobs this page: {filtered_count}")
+
+        # -----------------------------------
+        # Update seen IDs AFTER processing
+        # -----------------------------------
+        seen_ids.update(new_ids)
+
+        # -----------------------------------
+        # Stop conditions (robust)
+        # -----------------------------------
+
+        # 1. Last page (API)
         if len(jobs) < PAGE_SIZE:
+            print("🛑 Last page (len < PAGE_SIZE)")
             break
 
+        # 2. No relevant jobs (important for filtered queries)
+        if filtered_count == 0:
+            print("🛑 No relevant jobs → stopping")
+            break
+
+        # 3. Offset exceeds total
+        if total and payload["offset"] >= total:
+            print("🛑 Offset >= total")
+            break
+
+        # -----------------------------------
+        # Next page
+        # -----------------------------------
         payload["offset"] += PAGE_SIZE
-        
+        page_count += 1
+
         time.sleep(random.uniform(1.0, 2.5))
 
-    print(f"Total jobs found for {company_name}: {total_jobs}")
+    print(f"\n✅ {company_name}: Total relevant jobs = {total_jobs}")
+
     mark_removed_jobs(company_name, seen_ids)
  
 # -----------------------------------
