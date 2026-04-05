@@ -258,7 +258,7 @@ def scrape_nextjs_company(
 
         if not (
             is_japan
-            or remote_scope in ["global", "apac", "japan"]
+            or remote_scope in ["global", "apac", "asia", "japan"]
         ):
             continue
 
@@ -309,7 +309,7 @@ def scrape_greenhouse(company_slug, company_name):
         seniority, function = classify_job(job["title"])
         region, is_remote, is_japan, remote_scope = classify_location(location_name)
 
-        if not (is_japan or remote_scope in ["global", "apac", "japan"]):
+        if not (is_japan or remote_scope in ["global", "apac", "asia", "japan"]):
             continue
 
         external_id = str(job["id"])
@@ -382,7 +382,7 @@ def scrape_ashby(company_slug, company_name):
 
         if not (
             is_japan
-            or remote_scope in ["global", "apac", "japan"]
+            or remote_scope in ["global", "apac", "asia", "japan"]
         ):
             continue
 
@@ -469,7 +469,7 @@ def scrape_smartrecruiters(company_slug, company_name):
         # -----------------------------------
         if not (
             is_japan
-            or remote_scope in ["global", "apac", "japan"]
+            or remote_scope in ["global", "apac", "asia", "japan"]
             or "japan" in location_name.lower()
             or "tokyo" in location_name.lower()
         ):
@@ -628,7 +628,7 @@ def scrape_workday(company_slug, company_name, location_ids=None, facet="locatio
                 is_japan = True
                 remote_scope = "japan"
 
-            if not (is_japan or remote_scope in ["global", "apac", "japan"]):
+            if not (is_japan or remote_scope in ["global", "apac", "asia", "japan"]):
                 continue
 
             filtered_count += 1
@@ -723,7 +723,7 @@ def scrape_lever(company_slug, company_name):
         # --- 2. Apply your standard eligibility filter ---
         if not (
             is_japan
-            or remote_scope in ["global", "apac", "japan"]
+            or remote_scope in ["global", "apac", "asia", "japan"]
         ):
             continue
 
@@ -808,7 +808,7 @@ def scrape_monday(company_name="monday.com"):
         # --- Geography filter ---
         if not (
             is_japan
-            or remote_scope in ["global", "apac", "japan"]
+            or remote_scope in ["global", "apac", "asia", "japan"]
         ):
             continue
 
@@ -902,7 +902,7 @@ def scrape_eightfold(company_slug, company_name, location, pid):
             seniority, function = classify_job(title)
             region, is_remote, is_japan, remote_scope = classify_location(location_name)
 
-            if not (is_japan or remote_scope in ["global", "apac", "japan"]):
+            if not (is_japan or remote_scope in ["global", "apac", "asia", "japan"]):
                 continue
 
             job_data = {
@@ -1035,7 +1035,7 @@ def scrape_bamboohr(subdomain, company_name):
 
         if not (
             is_japan
-            or remote_scope in ["global", "apac", "japan"]
+            or remote_scope in ["global", "apac", "asia", "japan"]
         ):
             continue
 
