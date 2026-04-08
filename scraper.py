@@ -45,6 +45,57 @@ LINKEDIN_EXC_KEYWORDS = [
 ]
 
 # ---------------------------------------------------------------------------
+# Scrape logging ([Company] lines). LinkedIn + main() OS line stay unchanged.
+# ---------------------------------------------------------------------------
+
+
+def log_start(company: str, source: str) -> None:
+    print(f"[{company}] START ({source})")
+
+
+def log_error(company: str, message: str) -> None:
+    print(f"[{company}] ERROR: {message}")
+
+
+def log_page(
+    company: str,
+    *,
+    offset: int | None = None,
+    start: int | None = None,
+    raw_in_page: int | None = None,
+    relevant_in_page: int | None = None,
+    api_total: int | None = None,
+    extra: str | None = None,
+) -> None:
+    parts = []
+    if offset is not None:
+        parts.append(f"offset={offset}")
+    if start is not None:
+        parts.append(f"start={start}")
+    if api_total is not None:
+        parts.append(f"api_total={api_total}")
+    if raw_in_page is not None:
+        parts.append(f"raw_in_page={raw_in_page}")
+    if relevant_in_page is not None:
+        parts.append(f"relevant_in_page={relevant_in_page}")
+    if extra:
+        parts.append(extra)
+    print(f"[{company}] Page | " + " | ".join(parts))
+
+
+def log_stop(company: str, reason: str) -> None:
+    print(f"[{company}] Stop: {reason}")
+
+
+def log_summary(company: str, raw_listings: int, relevant_stored: int) -> None:
+    print(f"[{company}] Summary: raw_listings={raw_listings} | relevant_stored={relevant_stored}")
+
+
+def log_success(company: str) -> None:
+    print(f"[{company}] SUCCESS")
+
+
+# ---------------------------------------------------------------------------
 # HTTP
 # ---------------------------------------------------------------------------
 
@@ -60,11 +111,11 @@ def safe_request(method: str, url: str, **kwargs) -> requests.Response | None:
                 return response
             if response.status_code in (500, 502, 503):
                 wait = 3 * (attempt + 1)
-                print(f"⚠️ HTTP {response.status_code}, retry {attempt + 1}, waiting {wait}s")
+                print(f"[HTTP] status={response.status_code}, retry {attempt + 1}, waiting {wait}s")
                 time.sleep(wait)
                 continue
         except requests.exceptions.RequestException as e:
-            print(f"⚠️ Request error: {e}")
+            print(f"[HTTP] Request error: {e}")
 
         time.sleep(2 * (attempt + 1))
 
@@ -101,7 +152,7 @@ def upsert_job(job_data: dict) -> None:
 
 def mark_removed_jobs(company_name: str, seen_ids: set) -> None:
     if not seen_ids:
-        print(f"⚠️ No seen_ids for {company_name}, skipping removal detection")
+        print(f"[{company_name}] Removal detection: skipped (no job IDs collected this run)")
         return
 
     response = (
@@ -116,10 +167,15 @@ def mark_removed_jobs(company_name: str, seen_ids: set) -> None:
     removed_ids = existing_ids - seen_ids
 
     if removed_ids:
-        print(f"Marking {len(removed_ids)} removed jobs for {company_name}")
+        print(
+            f"[{company_name}] Removal detection: marking {len(removed_ids)} "
+            f"listing(s) inactive (no longer on board)"
+        )
         supabase.table("jobs").update({"is_active": False}).in_(
             "external_id", list(removed_ids)
         ).eq("company", company_name).execute()
+    else:
+        print(f"[{company_name}] Removal detection: no change (all active DB IDs still on board)")
 
 
 # ---------------------------------------------------------------------------
@@ -205,28 +261,26 @@ def scrape_nextjs_company(
     json_page_path: str,
     locale: str = "en",
 ) -> None:
-    print(f"\nScraping {company_name}...")
+    log_start(company_name, "Next.js")
 
     try:
         res = requests.get(careers_url, timeout=REQUEST_TIMEOUT_S)
         res.raise_for_status()
     except Exception as e:
-        print(f"❌ Failed to fetch careers page: {e}")
+        log_error(company_name, f"failed to fetch careers page: {e}")
         return
 
     soup = BeautifulSoup(res.text, "html.parser")
     script_tag = soup.find("script", {"id": "__NEXT_DATA__"})
     if not script_tag:
-        print("❌ __NEXT_DATA__ not found")
+        log_error(company_name, "no __NEXT_DATA__ script on careers page")
         return
 
     next_data = json.loads(script_tag.string)
     build_id = next_data.get("buildId")
     if not build_id:
-        print("❌ buildId missing")
+        log_error(company_name, "buildId missing in __NEXT_DATA__")
         return
-
-    print(f"✅ buildId found: {build_id}")
 
     parsed = urlparse(careers_url)
     root = f"{parsed.scheme}://{parsed.netloc}"
@@ -238,23 +292,23 @@ def scrape_nextjs_company(
         base_path = "/".join(path.split("/")[:-1])
         json_url = f"{root}{base_path}/_next/data/{build_id}/{locale}/{json_page_path}.json"
 
-    print(f"📡 Fetching JSON: {json_url}")
-
     try:
         data_res = requests.get(json_url, timeout=REQUEST_TIMEOUT_S)
         data_res.raise_for_status()
         data = data_res.json()
     except Exception as e:
-        print(f"❌ Failed to fetch JSON: {e}")
+        log_error(company_name, f"failed to fetch or parse JSON ({json_url}): {e}")
         return
 
     jobs = _find_job_list_in_json(data)
     if not jobs:
-        print("❌ No job list detected")
+        log_error(company_name, "no job list found in JSON after auto-detect")
         return
 
-    print(f"Found {len(jobs)} jobs for {company_name}")
+    raw_total = len(jobs)
+    log_page(company_name, offset=0, raw_in_page=raw_total, extra="single JSON payload (no pagination offset)")
     seen_ids: set[str] = set()
+    relevant = 0
 
     for job in jobs:
         title = job.get("title") or job.get("text") or job.get("name")
@@ -291,6 +345,7 @@ def scrape_nextjs_company(
 
         external_id = str(external_id)
         seen_ids.add(external_id)
+        relevant += 1
 
         upsert_job(
             job_row(
@@ -307,8 +362,9 @@ def scrape_nextjs_company(
             )
         )
 
+    log_summary(company_name, raw_total, relevant)
     mark_removed_jobs(company_name, seen_ids)
-    print(f"✅ Finished {company_name}")
+    log_success(company_name)
 
 
 def scrape_miro() -> None:
@@ -326,14 +382,18 @@ def scrape_miro() -> None:
 
 
 def scrape_greenhouse(company_slug: str, company_name: str) -> None:
+    log_start(company_name, "Greenhouse")
     url = f"https://boards-api.greenhouse.io/v1/boards/{company_slug}/jobs"
     response = safe_request("GET", url)
     if not response:
+        log_error(company_name, "no HTTP response from Greenhouse API after retries")
         return
 
     jobs = response.json().get("jobs", [])
-    print(f"Found {len(jobs)} jobs for {company_name}")
+    raw_total = len(jobs)
+    log_page(company_name, offset=0, raw_in_page=raw_total, extra="single API response")
     seen_ids: set[str] = set()
+    relevant = 0
 
     for job in jobs:
         location_name = ""
@@ -348,6 +408,7 @@ def scrape_greenhouse(company_slug: str, company_name: str) -> None:
 
         external_id = str(job["id"])
         seen_ids.add(external_id)
+        relevant += 1
 
         upsert_job(
             job_row(
@@ -364,7 +425,9 @@ def scrape_greenhouse(company_slug: str, company_name: str) -> None:
             )
         )
 
+    log_summary(company_name, raw_total, relevant)
     mark_removed_jobs(company_name, seen_ids)
+    log_success(company_name)
 
 
 # ---------------------------------------------------------------------------
@@ -373,14 +436,18 @@ def scrape_greenhouse(company_slug: str, company_name: str) -> None:
 
 
 def scrape_ashby(company_slug: str, company_name: str) -> None:
+    log_start(company_name, "Ashby")
     url = f"https://api.ashbyhq.com/posting-api/job-board/{company_slug}"
     response = safe_request("GET", url)
     if not response:
+        log_error(company_name, "no HTTP response from Ashby API after retries")
         return
 
     jobs = response.json().get("jobs", [])
-    print(f"Found {len(jobs)} jobs for {company_name}")
+    raw_total = len(jobs)
+    log_page(company_name, offset=0, raw_in_page=raw_total, extra="single API response")
     seen_ids: set[str] = set()
+    relevant = 0
 
     for job in jobs:
         title = job.get("title")
@@ -402,6 +469,7 @@ def scrape_ashby(company_slug: str, company_name: str) -> None:
 
         external_id = str(job["id"])
         seen_ids.add(external_id)
+        relevant += 1
 
         upsert_job(
             job_row(
@@ -418,7 +486,9 @@ def scrape_ashby(company_slug: str, company_name: str) -> None:
             )
         )
 
+    log_summary(company_name, raw_total, relevant)
     mark_removed_jobs(company_name, seen_ids)
+    log_success(company_name)
 
 
 # ---------------------------------------------------------------------------
@@ -427,6 +497,7 @@ def scrape_ashby(company_slug: str, company_name: str) -> None:
 
 
 def scrape_smartrecruiters(company_slug: str, company_name: str) -> None:
+    log_start(company_name, "SmartRecruiters")
     all_jobs = []
     offset = 0
     limit = 100
@@ -438,17 +509,21 @@ def scrape_smartrecruiters(company_slug: str, company_name: str) -> None:
         )
         response = safe_request("GET", url)
         if not response:
+            log_error(company_name, f"no HTTP response at API offset={offset} after retries")
             return
 
         jobs = response.json().get("content", [])
         if not jobs:
+            log_stop(company_name, f"empty batch at offset={offset} (pagination end)")
             break
 
+        log_page(company_name, offset=offset, raw_in_page=len(jobs))
         all_jobs.extend(jobs)
         offset += limit
 
-    print(f"Found {len(all_jobs)} jobs for {company_name}")
+    raw_total = len(all_jobs)
     seen_ids: set[str] = set()
+    relevant = 0
 
     for job in all_jobs:
         title = job.get("name", "")
@@ -472,6 +547,7 @@ def scrape_smartrecruiters(company_slug: str, company_name: str) -> None:
         job_id = job.get("id")
         external_id = str(job_id)
         seen_ids.add(external_id)
+        relevant += 1
 
         upsert_job(
             job_row(
@@ -488,7 +564,9 @@ def scrape_smartrecruiters(company_slug: str, company_name: str) -> None:
             )
         )
 
+    log_summary(company_name, raw_total, relevant)
     mark_removed_jobs(company_name, seen_ids)
+    log_success(company_name)
 
 
 # ---------------------------------------------------------------------------
@@ -540,8 +618,10 @@ def scrape_workday(
 
     seen_ids: set = set()
     total_jobs = 0
+    raw_listings_total = 0
+    exited_on_http_error = False
 
-    print(f"\n--- Scraping Workday: {company_name} ---")
+    log_start(company_name, "Workday")
 
     def is_japan_override(location_name: str, external_path) -> bool:
         if location_name.lower() in ("2 locations", "multiple locations"):
@@ -550,35 +630,36 @@ def scrape_workday(
         return False
 
     while True:
-        print(f"\n➡️ {company_name} | offset: {payload['offset']}")
+        cur_offset = payload["offset"]
 
-        if payload["offset"] > max_offset:
-            print("🛑 Safety break (MAX_OFFSET)")
+        if cur_offset > max_offset:
+            log_stop(company_name, f"safety cap offset>{max_offset}")
             break
 
         response = safe_request("POST", api_url, json=payload, headers=headers)
         if not response:
-            print("❌ No response")
+            log_error(company_name, "no HTTP response from Workday API after retries")
+            exited_on_http_error = True
             break
 
         if response.status_code != 200:
-            print(f"❌ Failed: {response.status_code}")
+            log_error(company_name, f"Workday API HTTP status {response.status_code}")
+            exited_on_http_error = True
             break
 
         data = response.json()
         jobs = data.get("jobPostings", [])
         total = data.get("total")
-
-        print(f"Total (API): {total} | Returned: {len(jobs)}")
+        raw_listings_total += len(jobs)
 
         if not jobs:
-            print("🛑 No jobs returned")
+            log_stop(company_name, f"no job postings at offset={cur_offset}")
             break
 
         new_ids = {job.get("externalPath") for job in jobs}
 
         if new_ids.issubset(seen_ids):
-            print("🛑 Duplicate page detected")
+            log_stop(company_name, "duplicate page (same IDs as prior page)")
             break
 
         filtered_count = 0
@@ -624,27 +705,35 @@ def scrape_workday(
             )
             total_jobs += 1
 
-        print(f"Relevant jobs this page: {filtered_count}")
+        log_page(
+            company_name,
+            offset=cur_offset,
+            api_total=total,
+            raw_in_page=len(jobs),
+            relevant_in_page=filtered_count,
+        )
 
         seen_ids.update(new_ids)
 
         if len(jobs) < page_size:
-            print("🛑 Last page (len < PAGE_SIZE)")
+            log_stop(company_name, "last page (batch smaller than page size)")
             break
 
         if filtered_count == 0:
-            print("🛑 No relevant jobs → stopping")
+            log_stop(company_name, "no geography-relevant jobs on this page")
             break
 
         if total and payload["offset"] >= total:
-            print("🛑 Offset >= total")
+            log_stop(company_name, "offset reached API total count")
             break
 
         payload["offset"] += page_size
         time.sleep(random.uniform(1.0, 2.5))
 
-    print(f"\n✅ {company_name}: Total relevant jobs = {total_jobs}")
+    log_summary(company_name, raw_listings_total, total_jobs)
     mark_removed_jobs(company_name, seen_ids)
+    if not exited_on_http_error:
+        log_success(company_name)
 
 
 # ---------------------------------------------------------------------------
@@ -653,15 +742,19 @@ def scrape_workday(
 
 
 def scrape_lever(company_slug: str, company_name: str) -> None:
+    log_start(company_name, "Lever")
     url = f"https://api.lever.co/v0/postings/{company_slug}?mode=json"
     response = safe_request("GET", url)
 
     if not response:
-        print(f"Failed Lever fetch for {company_name}")
+        log_error(company_name, "no HTTP response from Lever API after retries")
         return
 
     jobs = response.json()
+    raw_total = len(jobs)
+    log_page(company_name, offset=0, raw_in_page=raw_total, extra="single API response")
     seen_ids: set[str] = set()
+    relevant = 0
 
     for job in jobs:
         title = job.get("text", "")
@@ -681,6 +774,7 @@ def scrape_lever(company_slug: str, company_name: str) -> None:
 
         external_id = str(external_id)
         seen_ids.add(external_id)
+        relevant += 1
 
         upsert_job(
             job_row(
@@ -698,8 +792,9 @@ def scrape_lever(company_slug: str, company_name: str) -> None:
             )
         )
 
+    log_summary(company_name, raw_total, relevant)
     mark_removed_jobs(company_name, seen_ids)
-    print(f"✅ Lever scrape complete for {company_name}")
+    log_success(company_name)
 
 
 # ---------------------------------------------------------------------------
@@ -708,31 +803,33 @@ def scrape_lever(company_slug: str, company_name: str) -> None:
 
 
 def scrape_monday(company_name: str = "monday.com") -> None:
+    log_start(company_name, "Monday.com / __NEXT_DATA__")
     url = "https://monday.com/careers"
-    print(f"Scraping {company_name}...")
 
     response = safe_request("GET", url)
     if not response:
-        print(f"❌ Failed to fetch {company_name}")
+        log_error(company_name, "no HTTP response for careers page after retries")
         return
 
     soup = BeautifulSoup(response.text, "html.parser")
     script_tag = soup.find("script", {"id": "__NEXT_DATA__"})
     if not script_tag:
-        print("❌ __NEXT_DATA__ not found.")
+        log_error(company_name, "no __NEXT_DATA__ script on careers page")
         return
 
     data = json.loads(script_tag.string)
     dynamic_data = data.get("props", {}).get("pageProps", {}).get("dynamicData", {})
     if not dynamic_data:
-        print("❌ dynamicData not found.")
+        log_error(company_name, "dynamicData missing in pageProps")
         return
 
     container_key = list(dynamic_data.keys())[0]
     positions = dynamic_data[container_key].get("positions", [])
 
-    print(f"Found {len(positions)} jobs for {company_name}")
+    raw_total = len(positions)
+    log_page(company_name, offset=0, raw_in_page=raw_total, extra="single embedded payload")
     seen_ids: set[str] = set()
+    relevant = 0
 
     for job in positions:
         title = job.get("name")
@@ -751,6 +848,7 @@ def scrape_monday(company_name: str = "monday.com") -> None:
 
         external_id = str(external_id)
         seen_ids.add(external_id)
+        relevant += 1
 
         upsert_job(
             job_row(
@@ -767,8 +865,9 @@ def scrape_monday(company_name: str = "monday.com") -> None:
             )
         )
 
+    log_summary(company_name, raw_total, relevant)
     mark_removed_jobs(company_name, seen_ids)
-    print(f"✅ Finished {company_name}")
+    log_success(company_name)
 
 
 # ---------------------------------------------------------------------------
@@ -777,16 +876,19 @@ def scrape_monday(company_name: str = "monday.com") -> None:
 
 
 def scrape_eightfold(company_slug: str, company_name: str, location: str, pid: str) -> None:
+    log_start(company_name, "Eightfold")
     base_url = f"https://{company_slug}.eightfold.ai/api/apply/v2/jobs"
     page_size = 10
     max_offset = 200
     start = 0
     total_jobs = 0
+    raw_listings_total = 0
     seen_ids: set = set()
+    exited_on_http_error = False
 
     while True:
         if start > max_offset:
-            print("Safety break triggered")
+            log_stop(company_name, f"safety cap start>{max_offset}")
             break
 
         params = {
@@ -808,15 +910,21 @@ def scrape_eightfold(company_slug: str, company_name: str, location: str, pid: s
         )
 
         if not r or r.status_code != 200:
-            print(f"Failed for {company_name}: {getattr(r, 'status_code', 'no response')}")
+            log_error(
+                company_name,
+                f"Eightfold API: {getattr(r, 'status_code', 'no response')}",
+            )
+            exited_on_http_error = True
             break
 
         data = r.json()
         jobs = data.get("positions", [])
         if not jobs:
+            log_stop(company_name, f"empty batch at start={start}")
             break
 
-        print(f"{company_name}: fetched {len(jobs)} jobs at offset {start}")
+        raw_listings_total += len(jobs)
+        page_relevant = 0
 
         for job in jobs:
             title = job.get("name")
@@ -850,14 +958,25 @@ def scrape_eightfold(company_slug: str, company_name: str, location: str, pid: s
                 )
             )
             total_jobs += 1
+            page_relevant += 1
+
+        log_page(
+            company_name,
+            start=start,
+            raw_in_page=len(jobs),
+            relevant_in_page=page_relevant,
+        )
 
         if len(jobs) < page_size:
+            log_stop(company_name, "last page (batch smaller than page size)")
             break
 
         start += page_size
 
-    print(f"Total jobs found for {company_name}: {total_jobs}")
+    log_summary(company_name, raw_listings_total, total_jobs)
     mark_removed_jobs(company_name, seen_ids)
+    if not exited_on_http_error:
+        log_success(company_name)
 
 
 # ---------------------------------------------------------------------------
@@ -866,17 +985,18 @@ def scrape_eightfold(company_slug: str, company_name: str, location: str, pid: s
 
 
 def scrape_bamboohr(subdomain: str, company_name: str) -> None:
+    log_start(company_name, "BambooHR")
     url = f"https://{subdomain}.bamboohr.com/careers/list"
 
     response = safe_request("GET", url)
     if not response:
-        print(f"❌ Failed BambooHR fetch for {company_name}: no response")
+        log_error(company_name, "no HTTP response from BambooHR list endpoint after retries")
         return
 
     try:
         data = response.json()
     except Exception as e:
-        print(f"❌ Failed BambooHR fetch for {company_name}: {e}")
+        log_error(company_name, f"invalid JSON from BambooHR: {e}")
         return
 
     jobs = []
@@ -888,8 +1008,10 @@ def scrape_bamboohr(subdomain: str, company_name: str) -> None:
         elif "jobs" in data:
             jobs = data["jobs"]
 
-    print(f"Found {len(jobs)} jobs for {company_name}")
+    raw_total = len(jobs)
+    log_page(company_name, offset=0, raw_in_page=raw_total, extra="single list response")
     seen_ids: set[str] = set()
+    relevant = 0
 
     for job in jobs:
         title = (
@@ -927,6 +1049,7 @@ def scrape_bamboohr(subdomain: str, company_name: str) -> None:
             continue
 
         seen_ids.add(external_id)
+        relevant += 1
 
         upsert_job(
             job_row(
@@ -943,8 +1066,9 @@ def scrape_bamboohr(subdomain: str, company_name: str) -> None:
             )
         )
 
+    log_summary(company_name, raw_total, relevant)
     mark_removed_jobs(company_name, seen_ids)
-    print(f"✅ BambooHR scrape complete for {company_name}")
+    log_success(company_name)
 
 
 # ---------------------------------------------------------------------------
@@ -954,6 +1078,7 @@ def scrape_bamboohr(subdomain: str, company_name: str) -> None:
 
 def scrape_netflix() -> None:
     company_name = "Netflix"
+    log_start(company_name, "Netflix jobs API")
     base_url = "https://explore.jobs.netflix.net/api/apply/v2/jobs"
     params = {
         "domain": "netflix.com",
@@ -963,9 +1088,11 @@ def scrape_netflix() -> None:
         "sort_by": "relevance",
     }
 
-    print(f"\nScraping {company_name}...")
     start = 0
     seen_ids: set[str] = set()
+    raw_listings_total = 0
+    relevant_total = 0
+    exited_on_http_error = False
 
     while True:
         params["start"] = start
@@ -973,17 +1100,23 @@ def scrape_netflix() -> None:
         try:
             r = safe_request("GET", base_url, params=params)
             if not r:
+                log_error(company_name, "no HTTP response from Netflix API after retries")
+                exited_on_http_error = True
                 break
             data = r.json()
         except Exception as e:
-            print(f"❌ Failed Netflix scrape: {e}")
+            log_error(company_name, f"Netflix request or JSON parse failed: {e}")
+            log_summary(company_name, raw_listings_total, relevant_total)
+            mark_removed_jobs(company_name, seen_ids)
             return
 
         jobs = data.get("positions", [])
         if not jobs:
+            log_stop(company_name, f"empty batch at start={start}")
             break
 
-        print(f"Processing {len(jobs)} jobs (start={start})")
+        raw_listings_total += len(jobs)
+        page_stored = 0
 
         for job in jobs:
             job_id = job.get("id")
@@ -1018,11 +1151,22 @@ def scrape_netflix() -> None:
                     is_japan,
                 )
             )
+            page_stored += 1
+
+        log_page(
+            company_name,
+            start=start,
+            raw_in_page=len(jobs),
+            relevant_in_page=page_stored,
+        )
+        relevant_total += page_stored
 
         start += params["num"]
 
+    log_summary(company_name, raw_listings_total, relevant_total)
     mark_removed_jobs(company_name, seen_ids)
-    print(f"✅ Finished {company_name}")
+    if not exited_on_http_error:
+        log_success(company_name)
 
 
 # ---------------------------------------------------------------------------
