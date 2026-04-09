@@ -144,7 +144,7 @@ ROLE_KEYWORDS = [
 def classify_role(title: str) -> str:
     t = title.lower()
 
-    for role, keywords in ROLE_KEYWORDS.items():
+    for role, keywords in ROLE_KEYWORDS:
         for kw in keywords:
             pattern = rf"\b{re.escape(kw)}\b"
             if re.search(pattern, t):
