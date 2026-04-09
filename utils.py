@@ -152,10 +152,11 @@ def classify_role(title: str) -> str:
 
     for role, keywords in ROLE_KEYWORDS.items():
         for kw in keywords:
-            if kw in t:
+            pattern = rf"\b{re.escape(kw)}\b"
+            if re.search(pattern, t):
                 return role
 
-    # 2. Fallbacks (broad signals)
+    # Fallbacks
     if "product" in t:
         return "Product"
     if "engineer" in t or "developer" in t:
@@ -165,7 +166,7 @@ def classify_role(title: str) -> str:
     if "sales" in t:
         return "Sales"
     if "recruit" in t or "talent" in t:
-        return "Recruiting"
+        return "Recruiting / HR"
 
     return "Other"
 
