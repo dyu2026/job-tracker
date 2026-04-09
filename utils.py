@@ -104,7 +104,20 @@ ROLE_KEYWORDS = {
         "full stack", "devops", "platform", "mobile", "ios", "android"
     ],
     "Product": [
-        "product manager", "product owner", "pm", "product lead"
+        "product manager",
+        "product management",
+        "product lead",
+        "product owner",
+        "product engineer",
+        "product director",
+        "product strategy",
+        "product operations",
+        "product ops",
+        "product solutions",
+        "product specialist",
+        "product compliance",
+        "product marketing",  # optional (or move to marketing)
+        "pm"
     ],
     "Design": [
         "designer", "ux", "ui", "product design", "visual"
@@ -139,10 +152,21 @@ def classify_role(title: str) -> str:
     t = title.lower()
 
     for role, keywords in ROLE_KEYWORDS.items():
-        for k in sorted(keywords, key=len, reverse=True):
-            # Match full words only
-            if re.search(rf"\b{k}\b", t):
+        for kw in keywords:
+            if kw in t:
                 return role
+
+    # 2. Fallbacks (broad signals)
+    if "product" in t:
+        return "Product"
+    if "engineer" in t or "developer" in t:
+        return "Engineering"
+    if "design" in t:
+        return "Design"
+    if "sales" in t:
+        return "Sales"
+    if "recruit" in t or "talent" in t:
+        return "Recruiting"
 
     return "Other"
 
