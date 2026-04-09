@@ -116,8 +116,7 @@ ROLE_KEYWORDS = {
         "product solutions",
         "product specialist",
         "product compliance",
-        "product marketing",  # optional (or move to marketing)
-        "pm"
+        "product marketing"
     ],
     "Design": [
         "designer", "ux", "ui", "product design", "visual"
