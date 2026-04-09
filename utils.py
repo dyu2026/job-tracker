@@ -1,4 +1,4 @@
-"""Derive seniority, function, and geography hints from job title and location text."""
+"""Derive seniority, role, and geography hints from job/location text."""
 
 from __future__ import annotations
 import re
@@ -170,8 +170,8 @@ def classify_role(title: str) -> str:
 
     return "Other"
 
-def classify_job(title: str) -> tuple[str, str, str]:
-    """Map title text to (seniority_bucket, function_bucket, role_bucket)."""
+def classify_job(title: str) -> tuple[str, str]:
+    """Map title text to (seniority_bucket, role_bucket)."""
     t = title.lower()
 
     # --- Seniority ---
@@ -182,20 +182,8 @@ def classify_job(title: str) -> tuple[str, str, str]:
     else:
         seniority = "Mid/Other"
 
-    # --- Function (keep your existing logic for now) ---
-    if "product" in t:
-        function = "Product"
-    elif "engineer" in t or "engineering" in t:
-        function = "Engineering"
-    elif "design" in t:
-        function = "Design"
-    else:
-        function = "Other"
-
-    # --- NEW: Role classification ---
     role = classify_role(title)
-
-    return seniority, function, role
+    return seniority, role
 
 
 def classify_location(
