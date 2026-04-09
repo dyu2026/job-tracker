@@ -191,6 +191,7 @@ def job_row(
     url,
     seniority: str,
     function: str,
+    role: str,
     region,
     is_remote: bool,
     is_japan: bool,
@@ -204,6 +205,7 @@ def job_row(
         "url": url,
         "seniority": seniority,
         "function": function,
+        "role": role,
         "region": region,
         "is_remote": is_remote,
         "is_japan": is_japan,
@@ -337,7 +339,8 @@ def scrape_nextjs_company(
         if not title or not external_id:
             continue
 
-        seniority, function = classify_job(title)
+        seniority, _, role  = classify_job(title)
+        function = role 
         region, is_remote, is_japan, remote_scope = classify_location(location_name)
 
         if not include_job(is_japan, remote_scope):
@@ -356,6 +359,7 @@ def scrape_nextjs_company(
                 job_url,
                 seniority,
                 function,
+                role,
                 region,
                 is_remote,
                 is_japan,
@@ -400,7 +404,9 @@ def scrape_greenhouse(company_slug: str, company_name: str) -> None:
         if isinstance(job.get("location"), dict):
             location_name = job["location"].get("name", "")
 
-        seniority, function = classify_job(job["title"])
+        seniority, _, role = classify_job(job["title"])
+        function = role 
+
         region, is_remote, is_japan, remote_scope = classify_location(location_name)
 
         if not include_job(is_japan, remote_scope):
@@ -419,6 +425,7 @@ def scrape_greenhouse(company_slug: str, company_name: str) -> None:
                 job["absolute_url"],
                 seniority,
                 function,
+                role,
                 region,
                 is_remote,
                 is_japan,
@@ -461,7 +468,8 @@ def scrape_ashby(company_slug: str, company_name: str) -> None:
             location_list = [loc.get("name", "") for loc in job["locations"]]
             location_name = "; ".join(location_list)
 
-        seniority, function = classify_job(title)
+        seniority, _, role = classify_job(title)
+        function = role 
         region, is_remote, is_japan, remote_scope = classify_location(location_name)
 
         if not include_job(is_japan, remote_scope):
@@ -480,6 +488,7 @@ def scrape_ashby(company_slug: str, company_name: str) -> None:
                 job.get("applyUrl"),
                 seniority,
                 function,
+                role,
                 region,
                 is_remote,
                 is_japan,
@@ -533,7 +542,8 @@ def scrape_smartrecruiters(company_slug: str, company_name: str) -> None:
         country = loc.get("country", "")
         location_name = ", ".join(p for p in (city, region_name, country) if p)
 
-        seniority, function = classify_job(title)
+        seniority, _, role = classify_job(title)
+        function = role 
         region, is_remote, is_japan, remote_scope = classify_location(location_name)
 
         if not include_job(
@@ -558,6 +568,7 @@ def scrape_smartrecruiters(company_slug: str, company_name: str) -> None:
                 f"https://jobs.smartrecruiters.com/{company_slug.capitalize()}/{job_id}",
                 seniority,
                 function,
+                role,
                 region,
                 is_remote,
                 is_japan,
@@ -677,7 +688,8 @@ def scrape_workday(
 
             override_japan = is_japan_override(location_name, external_path)
 
-            seniority, function = classify_job(title)
+            seniority, _, role  = classify_job(title)
+            function = role
             region, is_remote, is_japan, remote_scope = classify_location(location_name)
 
             if override_japan:
@@ -698,6 +710,7 @@ def scrape_workday(
                     f"https://{subdomain}.{cluster}.myworkdayjobs.com/en-US/{tenant}{external_path}",
                     seniority,
                     function,
+                    role,
                     region,
                     is_remote,
                     is_japan,
@@ -766,7 +779,8 @@ def scrape_lever(company_slug: str, company_name: str) -> None:
         if workplace_type == "remote" and "remote" not in location_name.lower():
             location_name = f"Remote, {location_name}".strip(", ")
 
-        seniority, function = classify_job(title)
+        seniority, _, role  = classify_job(title)
+        function = role
         region, is_remote, is_japan, remote_scope = classify_location(location_name)
 
         if not include_job(is_japan, remote_scope):
@@ -785,6 +799,7 @@ def scrape_lever(company_slug: str, company_name: str) -> None:
                 job.get("hostedUrl"),
                 seniority,
                 function,
+                role,
                 region,
                 is_remote,
                 is_japan,
@@ -840,7 +855,8 @@ def scrape_monday(company_name: str = "monday.com") -> None:
         location_name = job.get("location", {}).get("name", "")
         job_url = job.get("url_active_page")
 
-        seniority, function = classify_job(title)
+        seniority, _, role  = classify_job(title)
+        function = role
         region, is_remote, is_japan, remote_scope = classify_location(location_name)
 
         if not include_job(is_japan, remote_scope):
@@ -859,6 +875,7 @@ def scrape_monday(company_name: str = "monday.com") -> None:
                 job_url,
                 seniority,
                 function,
+                role,
                 region,
                 is_remote,
                 is_japan,
@@ -937,7 +954,8 @@ def scrape_eightfold(company_slug: str, company_name: str, location: str, pid: s
 
             seen_ids.add(external_id)
 
-            seniority, function = classify_job(title)
+            seniority, _, role  = classify_job(title)
+            function = role
             region, is_remote, is_japan, remote_scope = classify_location(location_name)
 
             if not include_job(is_japan, remote_scope):
@@ -952,6 +970,7 @@ def scrape_eightfold(company_slug: str, company_name: str, location: str, pid: s
                     job_url,
                     seniority,
                     function,
+                    role,
                     region,
                     is_remote,
                     is_japan,
@@ -1042,7 +1061,8 @@ def scrape_bamboohr(subdomain: str, company_name: str) -> None:
 
         job_url = f"https://{subdomain}.bamboohr.com/careers/{external_id}"
 
-        seniority, function = classify_job(title)
+        seniority, _, role  = classify_job(title)
+        function = role
         region, is_remote, is_japan, remote_scope = classify_location(location_name)
 
         if not include_job(is_japan, remote_scope):
@@ -1060,6 +1080,7 @@ def scrape_bamboohr(subdomain: str, company_name: str) -> None:
                 job_url,
                 seniority,
                 function,
+                role,
                 region,
                 is_remote,
                 is_japan,
@@ -1129,7 +1150,8 @@ def scrape_netflix() -> None:
             external_id = str(job_id)
             seen_ids.add(external_id)
 
-            seniority, function = classify_job(title)
+            seniority, _, role  = classify_job(title)
+            function = role
             region, is_remote, is_japan, remote_scope = classify_location(location_name)
 
             job_url = (
@@ -1146,6 +1168,7 @@ def scrape_netflix() -> None:
                     job_url,
                     seniority,
                     function,
+                    role,
                     region,
                     is_remote,
                     is_japan,
