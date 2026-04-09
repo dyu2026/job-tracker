@@ -41,7 +41,7 @@ LINKEDIN_INC_KEYWORDS = [
 
 LINKEDIN_EXC_KEYWORDS = [
     "excited to announce", "i’m happy to share", "started a new position",
-    "looking for a new role", "i am looking", "please help me find",
+    "looking for a new role", "i am looking", "please help me find", "I'm joining",
 ]
 
 # ---------------------------------------------------------------------------
