@@ -1,6 +1,7 @@
 """Derive seniority, function, and geography hints from job title and location text."""
 
 from __future__ import annotations
+import re
 
 # --- Location: Japan substring hints ---
 
@@ -97,11 +98,59 @@ RESTRICTED_REGION_KEYWORDS = (
     "vancouver",
 )
 
+ROLE_KEYWORDS = {
+    "Engineering": [
+        "engineer", "developer", "software", "backend", "frontend",
+        "full stack", "devops", "platform", "mobile", "ios", "android"
+    ],
+    "Product": [
+        "product manager", "product owner", "pm", "product lead"
+    ],
+    "Design": [
+        "designer", "ux", "ui", "product design", "visual"
+    ],
+    "Data": [
+        "data", "analyst", "analytics", "machine learning",
+        "ai", "scientist", "ml"
+    ],
+    "Sales": [
+        "account executive", "sales", "business development",
+        "bd", "account manager", "commercial", "enterprise"
+    ],
+    "Customer Success": [
+        "customer success", "customer support",
+        "customer experience", "csm"
+    ],
+    "Marketing": [
+        "marketing", "growth", "seo", "content", "brand"
+    ],
+    "Recruiting / HR": [
+        "recruiter", "talent", "hr", "people"
+    ],
+    "Operations": [
+        "operations", "ops", "program manager", "project manager"
+    ],
+    "Finance": [
+        "finance", "accounting", "fp&a", "controller"
+    ],
+}
 
-def classify_job(title: str) -> tuple[str, str]:
-    """Map title text to (seniority_bucket, function_bucket)."""
+def classify_role(title: str) -> str:
     t = title.lower()
 
+    for role, keywords in ROLE_KEYWORDS.items():
+        for k in sorted(keywords, key=len, reverse=True):
+            # Match full words only
+            if re.search(rf"\b{k}\b", t):
+                return role
+
+    return "Other"
+
+def classify_job(title: str) -> tuple[str, str, str]:
+    """Map title text to (seniority_bucket, function_bucket, role_bucket)."""
+    t = title.lower()
+
+    # --- Seniority ---
     if "director" in t or "vp" in t:
         seniority = "Director+"
     elif "senior" in t or "sr" in t:
@@ -109,6 +158,7 @@ def classify_job(title: str) -> tuple[str, str]:
     else:
         seniority = "Mid/Other"
 
+    # --- Function (keep your existing logic for now) ---
     if "product" in t:
         function = "Product"
     elif "engineer" in t or "engineering" in t:
@@ -118,7 +168,10 @@ def classify_job(title: str) -> tuple[str, str]:
     else:
         function = "Other"
 
-    return seniority, function
+    # --- NEW: Role classification ---
+    role = classify_role(title)
+
+    return seniority, function, role
 
 
 def classify_location(
