@@ -98,54 +98,48 @@ RESTRICTED_REGION_KEYWORDS = (
     "vancouver",
 )
 
-ROLE_KEYWORDS = {
-    "Engineering": [
-        "engineer", "developer", "software", "backend", "frontend",
-        "full stack", "devops", "platform", "mobile", "ios", "android"
-    ],
-    "Product": [
-        "product manager",
-        "product management",
-        "product lead",
-        "product owner",
-        "product engineer",
-        "product director",
-        "product strategy",
-        "product operations",
-        "product ops",
-        "product solutions",
-        "product specialist",
-        "product compliance",
-        "product marketing"
-    ],
-    "Design": [
-        "designer", "ux", "ui", "product design", "visual"
-    ],
-    "Data": [
-        "data", "analyst", "analytics", "machine learning",
-        "ai", "scientist", "ml"
-    ],
-    "Sales": [
+ROLE_KEYWORDS = [
+    ("Recruiting / HR", [
+        "recruiter", "talent acquisition", "talent", "hr", "people"
+    ]),
+    ("Product", [
+        "product manager", "product management", "product lead",
+        "product owner", "product director", "product strategy",
+        "product operations", "product ops",
+        "product solutions", "product specialist",
+        "product compliance", "product marketing"
+    ]),
+    ("Engineering", [
+        "software engineer", "engineer", "developer",
+        "backend", "frontend", "full stack", "devops",
+        "platform", "mobile", "ios", "android"
+    ]),
+    ("Design", [
+        "product designer", "designer", "ux designer", "ui designer",
+        "ux", "ui", "visual designer"
+    ]),
+    ("Data", [
+        "data scientist", "data analyst", "analytics",
+        "machine learning", "ml", "ai"
+    ]),
+    ("Sales", [
         "account executive", "sales", "business development",
-        "bd", "account manager", "commercial", "enterprise"
-    ],
-    "Customer Success": [
+        "account manager", "commercial", "enterprise"
+    ]),
+    ("Customer Success", [
         "customer success", "customer support",
         "customer experience", "csm"
-    ],
-    "Marketing": [
+    ]),
+    ("Marketing", [
         "marketing", "growth", "seo", "content", "brand"
-    ],
-    "Recruiting / HR": [
-        "recruiter", "talent", "hr", "people"
-    ],
-    "Operations": [
-        "operations", "ops", "program manager", "project manager"
-    ],
-    "Finance": [
+    ]),
+    ("Operations", [
+        "operations", "program manager", "project manager"
+    ]),
+    ("Finance", [
         "finance", "accounting", "fp&a", "controller"
-    ],
-}
+    ]),
+]
 
 def classify_role(title: str) -> str:
     t = title.lower()
