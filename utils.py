@@ -99,45 +99,97 @@ RESTRICTED_REGION_KEYWORDS = (
 )
 
 ROLE_KEYWORDS = [
-    ("Recruiting / HR", [
-        "recruiter", "talent acquisition", "talent", "hr", "people"
+    ("solutions architect and engineer", [
+        "solutions architect",
+        "solution architect",
+        "solutions engineer",
+        "solution engineer"
     ]),
-    ("Product", [
-        "product manager", "product management", "product lead",
-        "product owner", "product director", "product strategy",
-        "product operations", "product ops",
-        "product solutions", "product specialist",
-        "product compliance", "product marketing"
+    
+    ("customer solution", [
+        "customer solutions",
+        "customer solution",
+        "solutions consultant",
+        "solution consultant",
+        "implementation consultant"
     ]),
-    ("Engineering", [
-        "software engineer", "engineer", "developer",
-        "backend", "frontend", "full stack", "devops",
-        "platform", "mobile", "ios", "android"
+
+    ("Communications and PR", [
+        "communications",
+        "public relations",
+        "pr",
+        "media relations",
+        "publicity"
     ]),
-    ("Design", [
-        "product designer", "designer", "ux designer", "ui designer",
-        "ux", "ui", "visual designer"
+
+    ("product management", [
+        "product manager", "product management", "product owner", "product lead",
+        "cpo"
     ]),
-    ("Data", [
-        "data scientist", "data analyst", "analytics",
-        "machine learning", "ml", "ai"
+
+    ("engineering", [
+        "engineer", "developer", "software", "backend", "frontend", "full stack",
+        "devops", "platform", "mobile", "ios", "android", "cto"
     ]),
-    ("Sales", [
-        "account executive", "sales", "business development",
-        "account manager", "commercial", "enterprise"
+
+    ("design", [
+        "designer", "ux", "ui", "product design", "visual", "design"
     ]),
-    ("Customer Success", [
-        "customer success", "customer support",
-        "customer experience", "csm"
+
+    ("data and analytics", [
+        "data", "analytics", "analyst", "machine learning", "ml", "ai"
     ]),
-    ("Marketing", [
+
+    ("marketing", [
         "marketing", "growth", "seo", "content", "brand"
     ]),
-    ("Operations", [
-        "operations", "program manager", "project manager"
+
+    ("sales", [
+        "sales", "account executive", "account manager", "cro"
     ]),
-    ("Finance", [
+
+    ("business development", [
+        "business development", "bd"
+    ]),
+
+    ("customer success and experience", [
+        "customer success", "customer support", "customer experience", "csm"
+    ]),
+
+    ("HR and recruiting", [
+        "recruiter", "talent", "hr", "people"
+    ]),
+
+    ("finance and accounting", [
         "finance", "accounting", "fp&a", "controller"
+    ]),
+
+    ("operations and support", [
+        "operations", "ops", "support"
+    ]),
+
+    ("program and project management", [
+        "program manager", "project manager"
+    ]),
+
+    ("Information Technology", [
+        "it", "information technology", "systems administrator"
+    ]),
+
+    ("security", [
+        "security", "infosec", "cybersecurity"
+    ]),
+
+    ("legal", [
+        "legal", "counsel", "compliance"
+    ]),
+
+    ("research and development", [
+        "research", "scientist", "r&d"
+    ]),
+
+    ("supply chain and procurement", [
+        "supply chain", "procurement", "purchasing"
     ]),
 ]
 
@@ -150,19 +202,8 @@ def classify_role(title: str) -> str:
             if re.search(pattern, t):
                 return role
 
-    # Fallbacks
-    if "product" in t:
-        return "Product"
-    if "engineer" in t or "developer" in t:
-        return "Engineering"
-    if "design" in t:
-        return "Design"
-    if "sales" in t:
-        return "Sales"
-    if "recruit" in t or "talent" in t:
-        return "Recruiting / HR"
+    return "other"
 
-    return "Other"
 
 def classify_job(title: str) -> tuple[str, str]:
     """Map title text to (seniority_bucket, role_bucket)."""
