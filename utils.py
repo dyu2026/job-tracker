@@ -150,6 +150,7 @@ ROLE_KEYWORDS = [
     ("business development", [
         "business development", "bd", "partner manager", "partner development",
     "partner business", "partner relations", "partnerships", "alliances", "channel",
+    "managing partner"
     ]),
 
     ("sales", [
