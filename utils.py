@@ -150,7 +150,7 @@ ROLE_KEYWORDS = [
 
     ("sales", [
         "sales", "account executive", "account manager", "cro", "account management",
-        "gtm", "partnerships"
+        "gtm", "partnerships", "account director"
     ]),
 
     ("customer success and experience", [
