@@ -100,57 +100,52 @@ RESTRICTED_REGION_KEYWORDS = (
 
 ROLE_KEYWORDS = [
     ("solutions architect and engineer", [
-        "solutions architect",
-        "solution architect",
-        "solutions engineer",
+        "solutions architect", "solution architect", "solutions engineer",
         "solution engineer"
     ]),
     
     ("customer solution", [
-        "customer solutions",
-        "customer solution",
-        "solutions consultant",
-        "solution consultant",
-        "solutions consulting",
-        "implementation consultant", 
-        "tam",
-        "technical account manager"
+        "customer solutions", "customer solution", "solutions consultant",
+        "solution consultant", "solutions consulting", "implementation consultant", 
+        "tam", "technical account manager", "consultant", "consulting",
+        "implementation", "professional services", "presales", "technical solutions",
+        "technical deployment", "functional consultant"
     ]),
 
     ("Communications and PR", [
-        "communications",
-        "public relations",
-        "pr",
-        "media relations",
+        "communications", "public relations", "pr", "media relations",
         "publicity"
     ]),
 
     ("product management", [
         "product manager", "product management", "product owner", "product lead",
-        "cpo"
+        "cpo", "product merchandising", product solutions"
     ]),
 
     ("engineering", [
         "engineer", "developer", "software", "backend", "frontend", "full stack",
-        "devops", "platform", "mobile", "ios", "android", "cto", "engineering"
+        "devops", "platform", "mobile", "ios", "android", "cto", "engineering",
+        "tech lead", "technical architect"
     ]),
 
     ("design", [
-        "designer", "ux", "ui", "product design", "visual", "design"
+        "designer", "ux", "ui", "product design", "visual", "design", "creative director",
+        "copywriter"
     ]),
 
     ("data and analytics", [
-        "data", "analytics", "analyst", "machine learning", "ml", "ai"
+        "data", "analytics", "analyst", "machine learning", "ml", "ai", "insights"
     ]),
 
     ("marketing", [
-        "marketing", "growth", "seo", "content", "brand", "market", "events"
+        "marketing", "growth", "seo", "content", "brand", "market", "events", "field marketer",
+        "community manager"
     ]),
 
     ("business development", [
         "business development", "bd", "partner manager", "partner development",
-    "partner business", "partner relations", "partnerships", "alliances", "channel",
-    "managing partner"
+        "partner business", "partner relations", "partnerships", "alliances", "channel",
+        "managing partner", "strategy", "strategic", "expansion"
     ]),
 
     ("sales", [
@@ -160,7 +155,8 @@ ROLE_KEYWORDS = [
 
     ("customer success and experience", [
         "customer success", "customer support", "customer experience", "csm",
-        "account manager"
+        "account manager", "onboarding", "renewals", "customer performance",
+        "customer care", "claims experience"
     ]),
 
     ("HR and recruiting", [
@@ -172,12 +168,14 @@ ROLE_KEYWORDS = [
     ]),
 
     ("operations and support", [
-        "operations", "ops", "support"
+        "operations", "ops", "support", "administrative", "clerk",
+        "health keeper"
     ]),
 
     ("program and project management", [
         "program manager", "project manager", "engagement manager",
-        "delivery manager", "engagement management"
+        "delivery manager", "engagement lead", "program management",
+        "project management"
     ]),
 
     ("Information Technology", [
@@ -190,7 +188,8 @@ ROLE_KEYWORDS = [
     ]),
 
     ("legal", [
-        "legal", "counsel", "compliance"
+        "legal", "counsel", "compliance", "IP relations", "crime",
+        "sanctions", "auditor", "public policy"
     ]),
 
     ("research and development", [
