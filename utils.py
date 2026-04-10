@@ -111,7 +111,10 @@ ROLE_KEYWORDS = [
         "customer solution",
         "solutions consultant",
         "solution consultant",
-        "implementation consultant"
+        "solutions consulting",
+        "implementation consultant", 
+        "tam",
+        "technical account manager"
     ]),
 
     ("Communications and PR", [
@@ -129,7 +132,7 @@ ROLE_KEYWORDS = [
 
     ("engineering", [
         "engineer", "developer", "software", "backend", "frontend", "full stack",
-        "devops", "platform", "mobile", "ios", "android", "cto"
+        "devops", "platform", "mobile", "ios", "android", "cto", "engineering"
     ]),
 
     ("design", [
@@ -141,11 +144,12 @@ ROLE_KEYWORDS = [
     ]),
 
     ("marketing", [
-        "marketing", "growth", "seo", "content", "brand", "market"
+        "marketing", "growth", "seo", "content", "brand", "market", "events"
     ]),
 
     ("sales", [
-        "sales", "account executive", "account manager", "cro"
+        "sales", "account executive", "account manager", "cro", "account management",
+        "gtm", "partnerships"
     ]),
 
     ("business development", [
@@ -153,7 +157,8 @@ ROLE_KEYWORDS = [
     ]),
 
     ("customer success and experience", [
-        "customer success", "customer support", "customer experience", "csm"
+        "customer success", "customer support", "customer experience", "csm",
+        "account manager"
     ]),
 
     ("HR and recruiting", [
@@ -169,11 +174,13 @@ ROLE_KEYWORDS = [
     ]),
 
     ("program and project management", [
-        "program manager", "project manager"
+        "program manager", "project manager", "engagement manager",
+        "delivery manager"
     ]),
 
     ("Information Technology", [
-        "it", "information technology", "systems administrator"
+        "it", "information technology", "systems administrator",
+        "technology"
     ]),
 
     ("security", [
