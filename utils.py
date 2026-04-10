@@ -119,7 +119,7 @@ ROLE_KEYWORDS = [
 
     ("product management", [
         "product manager", "product management", "product owner", "product lead",
-        "cpo", "product merchandising", product solutions"
+        "cpo", "product merchandising", "product solutions"
     ]),
 
     ("engineering", [
