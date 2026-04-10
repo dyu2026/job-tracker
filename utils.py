@@ -141,7 +141,7 @@ ROLE_KEYWORDS = [
     ]),
 
     ("marketing", [
-        "marketing", "growth", "seo", "content", "brand"
+        "marketing", "growth", "seo", "content", "brand", "market"
     ]),
 
     ("sales", [
