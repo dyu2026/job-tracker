@@ -147,13 +147,14 @@ ROLE_KEYWORDS = [
         "marketing", "growth", "seo", "content", "brand", "market", "events"
     ]),
 
+    ("business development", [
+        "business development", "bd", "partner manager", "partner development",
+    "partner business", "partner relations", "partnerships", "alliances", "channel",
+    ]),
+
     ("sales", [
         "sales", "account executive", "account manager", "cro", "account management",
         "gtm", "partnerships"
-    ]),
-
-    ("business development", [
-        "business development", "bd"
     ]),
 
     ("customer success and experience", [
@@ -166,7 +167,7 @@ ROLE_KEYWORDS = [
     ]),
 
     ("finance and accounting", [
-        "finance", "accounting", "fp&a", "controller"
+        "finance", "accounting", "fp&a", "controller", "accountant"
     ]),
 
     ("operations and support", [
@@ -175,7 +176,7 @@ ROLE_KEYWORDS = [
 
     ("program and project management", [
         "program manager", "project manager", "engagement manager",
-        "delivery manager"
+        "delivery manager", "engagement management"
     ]),
 
     ("Information Technology", [
