@@ -435,6 +435,29 @@ def scrape_greenhouse(company_slug: str, company_name: str) -> None:
 # Ashby
 # ---------------------------------------------------------------------------
 
+def slugify(title: str) -> str:
+    slug = title.lower()
+    slug = re.sub(r"[^\w\s-]", "", slug)
+    slug = re.sub(r"\s+", "-", slug)
+    slug = re.sub(r"-+", "-", slug)
+    return slug.strip("-")
+
+
+def validate_url(url: str) -> bool:
+    try:
+        r = requests.get(url, timeout=5)
+
+        if r.status_code != 200:
+            return False
+
+        content = r.text.lower()
+        if "page not found" in content or "not found" in content:
+            return False
+
+        return True
+    except:
+        return False
+
 
 def scrape_ashby(company_slug: str, company_name: str) -> None:
     log_start(company_name, "Ashby")
@@ -472,13 +495,36 @@ def scrape_ashby(company_slug: str, company_name: str) -> None:
         seen_ids.add(external_id)
         relevant += 1
 
+        # --- URL LOGIC (Cursor-specific) ---
+        apply_url = job.get("applyUrl")
+
+        if company_slug == "cursor":
+            # 1. Try Cursor slug page (PRIMARY)
+            slug = slugify(title or "")
+            cursor_url = f"https://cursor.com/ja/careers/{slug}"
+
+            if validate_url(cursor_url):
+                apply_url = cursor_url
+            else:
+                # 2. fallback to API applyUrl if valid
+                if apply_url and validate_url(apply_url):
+                    pass  # keep apply_url
+                else:
+                    # 3. final fallback (likely soft 404 but safe)
+                    apply_url = f"https://jobs.ashbyhq.com/{company_slug}/{external_id}"
+
+        # --- default behavior for other Ashby companies ---
+        else:
+            if not apply_url:
+                apply_url = f"https://jobs.ashbyhq.com/{company_slug}/{external_id}"
+
         upsert_job(
             job_row(
                 company_name,
                 external_id,
                 title,
                 location_name,
-                job.get("applyUrl"),
+                apply_url,
                 seniority,
                 role,
                 region,
@@ -1294,6 +1340,8 @@ SCRAPER_TASKS: list[tuple] = [
     (scrape_greenhouse, "roblox", "Roblox"),
     (scrape_greenhouse, "airbnb", "Airbnb"),
     (scrape_greenhouse, "wrike", "Wrike"),
+    (scrape_greenhouse, "gumgum", "GumGum"),
+    (scrape_greenhouse, "discord", "Discord"),
     (scrape_ashby, "notion", "Notion"),
     (scrape_ashby, "duck-duck-go", "DuckDuckGo"),
     (scrape_ashby, "deepl", "DeepL"),
@@ -1304,6 +1352,8 @@ SCRAPER_TASKS: list[tuple] = [
     (scrape_ashby, "supabase", "Supabase"),
     (scrape_ashby, "substack", "Substack"),
     (scrape_ashby, "kraken.com", "Kraken"),
+    (scrape_ashby, "snowflake", "Snowflake"),
+    (scrape_ashby, "cursor", "Cursor"),
     (scrape_smartrecruiters, "Canva", "Canva"),
     (scrape_smartrecruiters, "wise", "Wise"),
     (
