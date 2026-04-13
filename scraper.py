@@ -1435,6 +1435,7 @@ SCRAPER_TASKS: list[tuple] = [
     (scrape_greenhouse, "stripe", "Stripe"),
     (scrape_greenhouse, "anthropic", "Anthropic"),
     (scrape_greenhouse, "nothing", "Nothing"),
+    (scrape_greenhouse, "boxinc", "Box"),
     (scrape_greenhouse, "phrase", "Phrase"),
     (scrape_greenhouse, "okta", "Okta"),
     (scrape_greenhouse, "datadog", "Datadog"),
