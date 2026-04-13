@@ -1452,6 +1452,7 @@ SCRAPER_TASKS: list[tuple] = [
     (scrape_greenhouse, "wrike", "Wrike"),
     (scrape_greenhouse, "gumgum", "GumGum"),
     (scrape_greenhouse, "discord", "Discord"),
+    (scrape_ashby, "chromatic", "Chromatic"),
     (scrape_ashby, "notion", "Notion"),
     (scrape_ashby, "duck-duck-go", "DuckDuckGo"),
     (scrape_ashby, "deepl", "DeepL"),
