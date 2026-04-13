@@ -1215,6 +1215,116 @@ def scrape_netflix() -> None:
     if not exited_on_http_error:
         log_success(company_name)
 
+# ---------------------------------------------------------------------------
+# Uber
+# ---------------------------------------------------------------------------
+
+def scrape_uber(company_name: str = "Uber") -> None:
+    log_start(company_name, "Uber API")
+
+    url = "https://www.uber.com/api/loadSearchJobsResults"
+    params = {"localeCode": "ja-JP"}
+
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "User-Agent": "Mozilla/5.0",
+        "Origin": "https://www.uber.com",
+        "Referer": "https://www.uber.com/jp/ja/careers/list/",
+        "x-csrf-token": "x",
+    }
+
+    page = 0
+    limit = 10
+    raw_total = 0
+    relevant_total = 0
+    seen_ids: set[str] = set()
+
+    while True:
+        payload = {
+            "limit": limit,
+            "page": page,
+            "params": {
+                "location": [{"country": "JPN", "city": "Tokyo"}]
+            },
+        }
+
+        response = safe_request(
+            "POST",
+            url,
+            params=params,
+            json=payload,
+            headers=headers,
+        )
+
+        if not response:
+            log_error(company_name, f"no response at page={page}")
+            break
+
+        try:
+            data = response.json()
+        except Exception as e:
+            log_error(company_name, f"JSON parse failed at page={page}: {e}")
+            break
+
+        results = data.get("data", {}).get("results", [])
+        if not results:
+            log_stop(company_name, f"empty results at page={page}")
+            break
+
+        raw_total += len(results)
+        page_relevant = 0
+
+        for job in results:
+            external_id = str(job.get("id"))
+            title = job.get("title")
+            location_name = job.get("location", {}).get("name", "Tokyo, Japan")
+
+            if not external_id or not title:
+                continue
+
+            job_url = f"https://www.uber.com/global/en/careers/list/{external_id}/"
+
+            seniority, role = classify_job(title)
+            region, is_remote, is_japan, remote_scope = classify_location(location_name)
+
+            if not include_job(is_japan, remote_scope):
+                continue
+
+            seen_ids.add(external_id)
+            page_relevant += 1
+
+            upsert_job(
+                job_row(
+                    company_name,
+                    external_id,
+                    title,
+                    location_name,
+                    job_url,
+                    seniority,
+                    role,
+                    region,
+                    is_remote,
+                    is_japan,
+                )
+            )
+
+        log_page(
+            company_name,
+            offset=page,
+            raw_in_page=len(results),
+            relevant_in_page=page_relevant,
+        )
+
+        relevant_total += page_relevant
+
+        # stop if last page
+        if len(results) < limit:
+            log_stop(company_name, "last page (results < limit)")
+            break
+
+        page += 1
+        time.sleep(random.uniform(1.0, 2.0))
 
 # ---------------------------------------------------------------------------
 # LinkedIn (Google News RSS)
@@ -1417,6 +1527,7 @@ SCRAPER_TASKS: list[tuple] = [
     (scrape_lever, "kinsta", "Kinsta"),
     (scrape_bamboohr, "lottiefiles", "LottieFiles"),
     (scrape_netflix,),
+    (scrape_uber,),
     (scrape_linkedin,),
 ]
 
