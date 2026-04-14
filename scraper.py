@@ -36,7 +36,7 @@ REMOTE_SCOPES_INCLUDED = frozenset({"global", "apac", "asia", "japan"})
 LINKEDIN_INC_KEYWORDS = [
     "hiring", "opportunity", "job", "recruitment", "talent",
     "bilingual", "director", "career", "positions", "募集",
-    "roles", "role", "we are hiring", "join our team",
+    "roles", "role", "we are hiring", "join our team", "jobopportunity",
 ]
 
 LINKEDIN_EXC_KEYWORDS = [
