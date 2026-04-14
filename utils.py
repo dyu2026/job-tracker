@@ -25,8 +25,8 @@ GLOBAL_REMOTE_TERMS = ("anywhere", "worldwide", "global")
 RESTRICTED_REGION_KEYWORDS = (
     "united states", "usa", "us",
     "new york", "nyc", "san francisco", "seattle", "chicago", "atlanta",
-    "north america", "americas", "amers",
-    "canada", "toronto", "vancouver", "british columbia",
+    "north america", "americas", "amers", "california",
+    "canada", "toronto", "vancouver", "british columbia", "montreal",
     "latam", "mexico", "brazil", "chile", "argentina",
     "buenos aires", "santiago",
     "colombia", "peru", "ecuador",
@@ -35,16 +35,17 @@ RESTRICTED_REGION_KEYWORDS = (
     "united kingdom", "london",
     "france", "germany", "ireland", "netherlands",
     "spain", "sweden", "italy", "norway", "finland",
-    "belgium", "denmark", "lithuania",
+    "belgium", "denmark", "lithuania", "lisbon",
     "czech republic", "prague",
     "berlin", "amsterdam", "stockholm", "milan",
     "switzerland", "poland", "portugal",
     "united arab emirates", "uae", "saudi arabia",
     "singapore", "australia", "sydney",
-    "bangkok", "thailand", "vietnam",
+    "bangkok", "thailand", "vietnam", "kuala lumpur",
     "south korea", "india", "bangalore",
     "sea", "philippines", 
-    "south africa", "israel", 
+    "south africa", "israel", "serbia",
+    "baku", "cis",
 )
 
 ROLE_KEYWORDS = [
