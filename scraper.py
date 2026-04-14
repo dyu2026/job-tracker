@@ -1527,6 +1527,7 @@ SCRAPER_TASKS: list[tuple] = [
     (scrape_lever, "spotify", "Spotify"),
     (scrape_lever, "superside", "Superside"),
     (scrape_lever, "kinsta", "Kinsta"),
+    (scrape_lever, "xsolla", "Xsolla"),
     (scrape_bamboohr, "lottiefiles", "LottieFiles"),
     (scrape_netflix,),
     (scrape_uber,),
