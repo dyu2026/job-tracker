@@ -84,7 +84,8 @@ ROLE_KEYWORDS = [
     ]),
 
     ("data and analytics", [
-        "data", "analytics", "analyst", "machine learning", "ml", "ai", "insights"
+        "data", "analytics", "analyst", "machine learning", "ml", "ai", "insights", 
+        "measurement",
     ]),
 
     ("marketing", [
@@ -100,7 +101,8 @@ ROLE_KEYWORDS = [
 
     ("sales", [
         "sales", "account executive", "account manager", "cro", "account management",
-        "gtm", "partnerships", "account director"
+        "gtm", "partnerships", "account director", "smb", "deal management",
+        "partner success",
     ]),
 
     ("customer success and experience", [
@@ -119,13 +121,13 @@ ROLE_KEYWORDS = [
 
     ("operations and support", [
         "operations", "ops", "support", "administrative", "clerk",
-        "health keeper"
+        "health keeper", "workplace experience",
     ]),
 
     ("program and project management", [
         "program manager", "project manager", "engagement manager",
-        "delivery manager", "engagement lead", "program management",
-        "project management"
+        "engagement management", "delivery manager", "engagement lead", 
+        "program management", "project management"
     ]),
 
     ("Information Technology", [
@@ -139,7 +141,7 @@ ROLE_KEYWORDS = [
 
     ("legal", [
         "legal", "counsel", "compliance", "IP relations", "crime",
-        "sanctions", "auditor", "public policy"
+        "sanctions", "auditor", "public policy", "fincrime",
     ]),
 
     ("research and development", [
