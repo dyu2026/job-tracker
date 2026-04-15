@@ -1,5 +1,4 @@
 """Derive seniority, role, and geography hints from job/location text."""
-
 from __future__ import annotations
 import re
 
