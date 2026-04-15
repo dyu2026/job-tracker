@@ -45,7 +45,7 @@ RESTRICTED_REGION_KEYWORDS = (
     "south korea", "india", "bangalore",
     "sea", "philippines", 
     "south africa", "israel", "serbia",
-    "baku", "cis",
+    "baku", "cis", "bogota",
 )
 
 ROLE_KEYWORDS = [
