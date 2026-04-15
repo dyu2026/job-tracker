@@ -1461,6 +1461,7 @@ SCRAPER_TASKS: list[tuple] = [
     (scrape_ashby, "perplexity", "Perplexity"),
     (scrape_ashby, "sierra", "Sierra"),
     (scrape_ashby, "zapier", "Zapier"),
+    (scrape_ashby, "scopely", "Scopely"),
     (scrape_ashby, "supabase", "Supabase"),
     (scrape_ashby, "substack", "Substack"),
     (scrape_ashby, "kraken.com", "Kraken"),
