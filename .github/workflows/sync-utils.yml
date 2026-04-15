@@ -1,0 +1,43 @@
+name: Sync utils.py to job_dashboard
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "utils.py"
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Checkout job-tracker repo
+      - name: Checkout job-tracker
+        uses: actions/checkout@v4
+
+      # 2. Clone job_dashboard repo
+      - name: Clone job_dashboard
+        run: |
+          git clone https://x-access-token:${{ secrets.DASHBOARD_REPO_TOKEN }}@github.com/dyu2026/job_dashboard.git
+
+      # 3. Copy utils.py
+      - name: Copy utils.py
+        run: |
+          cp utils.py job_dashboard/utils.py
+
+      # 4. Commit & push if changed
+      - name: Commit and push changes
+        run: |
+          cd job_dashboard
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+
+          git add utils.py
+          
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Auto-sync utils.py from job-tracker"
+            git push
+          fi
