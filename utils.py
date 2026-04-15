@@ -4,7 +4,6 @@ from __future__ import annotations
 import re
 
 # --- Location: Japan substring hints ---
-
 JAPAN_LOCATION_TERMS = (
     "japan",
     "jp",
