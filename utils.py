@@ -34,7 +34,7 @@ RESTRICTED_REGION_KEYWORDS = (
     "france", "germany", "ireland", "netherlands",
     "spain", "sweden", "italy", "norway", "finland",
     "belgium", "denmark", "lithuania", "lisbon",
-    "czech republic", "prague",
+    "czech republic", "prague", "barcelona",
     "berlin", "amsterdam", "stockholm", "milan",
     "switzerland", "poland", "portugal",
     "united arab emirates", "uae", "saudi arabia",
@@ -42,6 +42,7 @@ RESTRICTED_REGION_KEYWORDS = (
     "bangkok", "thailand", "vietnam", "kuala lumpur",
     "south korea", "india", "bangalore",
     "sea", "philippines", 
+    "beijing", "china",
     "south africa", "israel", "serbia",
     "baku", "cis", "bogota",
 )
