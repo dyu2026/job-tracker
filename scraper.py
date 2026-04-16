@@ -575,6 +575,63 @@ def scrape_smartrecruiters(company_slug: str, company_name: str) -> None:
 # Workday
 # ---------------------------------------------------------------------------
 
+def _parse_workday_slug(company_slug: str) -> tuple[str, str, str]:
+    if "|" in company_slug:
+        parts = [p.strip() for p in company_slug.split("|") if p.strip()]
+    else:
+        parts = [p.strip() for p in company_slug.split("-") if p.strip()]
+
+    if len(parts) < 2:
+        raise ValueError(f"Invalid Workday company_slug: {company_slug}")
+
+    subdomain = parts[0]
+    tenant = parts[1]
+    cluster = parts[2] if len(parts) >= 3 else "wd5"
+    return subdomain, tenant, cluster
+
+
+def _extract_workday_location(job: dict) -> tuple[str, str]:
+    primary_name = ""
+    primary = job.get("location")
+
+    if isinstance(primary, dict):
+        primary_name = (
+            primary.get("descriptor")
+            or primary.get("name")
+            or primary.get("locationName")
+            or ""
+        )
+    elif isinstance(primary, str):
+        primary_name = primary.strip()
+
+    extra_names = []
+    extras = job.get("additionalLocations") or []
+    if isinstance(extras, list):
+        for loc in extras:
+            if isinstance(loc, str) and loc.strip():
+                extra_names.append(loc.strip())
+            elif isinstance(loc, dict):
+                name = loc.get("descriptor") or loc.get("name") or loc.get("locationName")
+                if name and str(name).strip():
+                    extra_names.append(str(name).strip())
+
+    display_parts = [x for x in [primary_name, *extra_names] if x]
+
+    if display_parts:
+        display_location = " / ".join(display_parts)
+    else:
+        fallback = job.get("locationsText") or job.get("locationText") or ""
+        display_location = fallback.strip()
+
+    filter_parts = [primary_name, *extra_names]
+
+    filter_location = " ".join(x for x in filter_parts if x).strip()
+
+    if not filter_location:
+        filter_location = display_location
+    filter_location = filter_location.lower()
+    return display_location, filter_location
+
 
 def scrape_workday(
     company_slug: str,
@@ -582,14 +639,8 @@ def scrape_workday(
     location_ids=None,
     facet: str = "locations",
 ) -> None:
-    parts = company_slug.split("|")
-    subdomain, tenant = parts[0], parts[1]
-    cluster = parts[2] if len(parts) == 3 else "wd5"
-
-    api_url = (
-        f"https://{subdomain}.{cluster}.myworkdayjobs.com/wday/cxs/"
-        f"{subdomain}/{tenant}/jobs"
-    )
+    subdomain, tenant, cluster = _parse_workday_slug(company_slug)
+    apiurl = f"https://{subdomain}.{cluster}.myworkdayjobs.com/wday/cxs/{subdomain}/{tenant}/jobs"
 
     headers = {
         "Content-Type": "application/json",
@@ -599,112 +650,117 @@ def scrape_workday(
         "Referer": f"https://{subdomain}.{cluster}.myworkdayjobs.com/en-US/{tenant}",
     }
 
-    page_size = 20
-    max_offset = 200
-
-    payload: dict = {
-        "limit": page_size,
-        "offset": 0,
-        "searchText": "",
-        "appliedFacets": {},
-    }
+    pagesize = 20
+    maxoffset = 200
+    payload = {"limit": pagesize, "offset": 0, "searchText": "", "appliedFacets": {}}
 
     if location_ids:
-        payload["appliedFacets"][facet] = (
-            location_ids if isinstance(location_ids, list) else [location_ids]
-        )
+        payload["appliedFacets"][facet] = location_ids if isinstance(location_ids, list) else [location_ids]
 
-    seen_ids: set = set()
-    total_jobs = 0
-    raw_listings_total = 0
+    seenids: set[str] = set()
+    totaljobs = 0
+    rawlistingstotal = 0
 
     log_start(company_name, "Workday")
+    
+    no_relevant_pages = 0
 
     while True:
-        cur_offset = payload["offset"]
-
-        if cur_offset > max_offset:
-            log_stop(company_name, f"safety cap offset>{max_offset}")
+        curoffset = payload["offset"]
+        if curoffset > maxoffset:
+            log_stop(company_name, f"safety cap offset>{maxoffset}")
             break
 
-        response = safe_request("POST", api_url, json=payload, headers=headers)
+        response = safe_request("POST", apiurl, json=payload, headers=headers)
         if not response:
             log_error(company_name, "no HTTP response from Workday API after retries")
             return
-
         if response.status_code != 200:
             log_error(company_name, f"Workday API HTTP status {response.status_code}")
             return
 
         data = response.json()
         jobs = data.get("jobPostings", [])
-        total = data.get("total")
-        raw_listings_total += len(jobs)
+        total = data.get("total", 0)
+        rawlistingstotal += len(jobs)
 
         if not jobs:
-            log_stop(company_name, f"no job postings at offset={cur_offset}")
+            log_stop(company_name, f"no job postings at offset={curoffset}")
             break
 
-        new_ids = {job.get("externalPath") for job in jobs}
-        if new_ids.issubset(seen_ids):
-            log_stop(company_name, "duplicate page (same IDs as prior page)")
+        page_ids = {str(job.get("externalPath")) for job in jobs if job.get("externalPath")}
+
+        if page_ids.issubset(seenids):
             break
 
-        filtered_count = 0
+        seenids.update(page_ids) 
+
+        filteredcount = 0
 
         for job in jobs:
-            title = job.get("title", "")
-            external_path = job.get("externalPath")
+            title = job.get("title")
+            externalpath = job.get("externalPath")
+            if not title or not externalpath:
+                continue
 
-            if job.get("locations"):
-                location_name = " / ".join(loc.get("locationName", "") for loc in job["locations"])
-            else:
-                location_name = job.get("locationsText", "")
-
+            location_name, filter_location = _extract_workday_location(job)
             seniority, role = classify_job(title)
-            region, is_remote, is_japan, remote_scope, is_valid = enrich_and_validate_location(location_name)
+            region, is_remote, is_japan, remote_scope, is_valid = enrich_and_validate_location(filter_location)
 
             if not is_valid:
                 continue
 
-            filtered_count += 1
+            filteredcount += 1
+            totaljobs += 1
+            seenids.add(str(externalpath))
 
             upsert_job(
                 job_row(
-                    company_name, external_path, title, location_name,
-                    f"https://{subdomain}.{cluster}.myworkdayjobs.com/en-US/{tenant}{external_path}",
-                    seniority, role, region, is_remote, is_japan, remote_scope, is_valid,
+                    company_name,
+                    str(externalpath),
+                    title,
+                    location_name,
+                    f"https://{subdomain}.{cluster}.myworkdayjobs.com/en-US/{tenant}{externalpath}",
+                    seniority,
+                    role,
+                    region,
+                    is_remote,
+                    is_japan,
+                    remote_scope,
+                    is_valid,
                 )
             )
-            total_jobs += 1
 
         log_page(
             company_name,
-            offset=cur_offset,
+            offset=curoffset,
             api_total=total,
             raw_in_page=len(jobs),
-            relevant_in_page=filtered_count,
+            relevant_in_page=filteredcount,
         )
+        
+        if filteredcount == 0:
+            no_relevant_pages += 1
+        else:
+            no_relevant_pages = 0
 
-        seen_ids.update(new_ids)
+        if no_relevant_pages >= 2:
+            log_stop(company_name, "2 consecutive irrelevant pages")
+            break
 
-        if len(jobs) < page_size:
+        if len(jobs) < pagesize:
             log_stop(company_name, "last page (batch smaller than page size)")
             break
 
-        if filtered_count == 0:
-            log_stop(company_name, "no geography-relevant jobs on this page")
-            break
-
-        if total and payload["offset"] >= total:
+        if total and curoffset + pagesize >= total:
             log_stop(company_name, "offset reached API total count")
             break
 
-        payload["offset"] += page_size
+        payload["offset"] += pagesize
         time.sleep(random.uniform(1.0, 2.5))
 
-    log_summary(company_name, raw_listings_total, total_jobs)
-    mark_removed_jobs(company_name, seen_ids)
+    log_summary(company_name, rawlistingstotal, totaljobs)
+    mark_removed_jobs(company_name, seenids)
     log_success(company_name)
 
 
