@@ -1438,6 +1438,7 @@ SCRAPER_TASKS: list[tuple] = [
     (scrape_ashby, "kraken.com", "Kraken"),
     (scrape_ashby, "snowflake", "Snowflake"),
     (scrape_ashby, "cursor", "Cursor"),
+    (scrape_ashby, "cognition", "Cognition"),
     (scrape_smartrecruiters, "Canva", "Canva"),
     (scrape_smartrecruiters, "wise", "Wise"),
     (
