@@ -633,6 +633,8 @@ def scrape_workday(
 
     apiurl = f"https://{subdomain}.{cluster}.myworkdayjobs.com/wday/cxs/{subdomain}/{tenant}/jobs"
 
+    session = requests.Session()
+
     headers = {
         "Content-Type": "application/json",
         "Accept": "application/json",
@@ -664,6 +666,9 @@ def scrape_workday(
 
     no_relevant_pages = 0
 
+    # 🔥 DEBUG counters
+    detail_calls = 0
+
     while True:
         curoffset = payload["offset"]
 
@@ -671,14 +676,13 @@ def scrape_workday(
             log_stop(company_name, f"safety cap offset>{maxoffset}")
             break
 
+        # small jitter BEFORE request (important)
+        time.sleep(random.uniform(0.2, 0.6))
+
         response = safe_request("POST", apiurl, json=payload, headers=headers)
 
         if not response:
             log_error(company_name, "no HTTP response from Workday API after retries")
-            return
-
-        if response.status_code != 200:
-            log_error(company_name, f"Workday API HTTP status {response.status_code}")
             return
 
         data = response.json()
@@ -691,7 +695,16 @@ def scrape_workday(
             log_stop(company_name, f"no job postings at offset={curoffset}")
             break
 
-        # Dedup protection
+        # 🔥 EARLY PAGE SKIP (big win)
+        if all(
+            "japan" not in (job.get("locationsText") or "").lower()
+            for job in jobs
+        ):
+            no_relevant_pages += 1
+            payload["offset"] += pagesize
+            continue
+
+        # dedup
         page_ids = {
             str(job.get("externalPath"))
             for job in jobs
@@ -706,6 +719,9 @@ def scrape_workday(
 
         filteredcount = 0
 
+        # 🔥 LIMIT detail calls per page (critical)
+        detail_budget = 5
+
         for job in jobs:
             title = job.get("title")
             externalpath = job.get("externalPath")
@@ -713,9 +729,6 @@ def scrape_workday(
             if not title or not externalpath:
                 continue
 
-            # -----------------------------
-            # Extract basic location
-            # -----------------------------
             primary = job.get("location")
             extras = job.get("additionalLocations") or []
             locations_text = job.get("locationsText") or ""
@@ -740,13 +753,16 @@ def scrape_workday(
             display_location = " / ".join(display_parts) if display_parts else locations_text.strip()
             filter_location = " ".join(display_parts).strip().lower()
 
-            # -----------------------------
-            # 🔥 DETAIL FALLBACK (ONLY when needed)
-            # -----------------------------
-            if (
+            # 🔥 SMART detail trigger
+            needs_detail = (
                 not filter_location
-                or "locations" in locations_text.lower()
-            ):
+                or "locations" in display_location.lower()
+            )
+
+            if needs_detail and detail_budget > 0:
+                detail_budget -= 1
+                detail_calls += 1
+
                 detail = safe_request(
                     "GET",
                     f"https://{subdomain}.{cluster}.myworkdayjobs.com/wday/cxs/{subdomain}/{tenant}{externalpath}",
@@ -761,9 +777,6 @@ def scrape_workday(
                         display_location = " / ".join(detail_locations)
                         filter_location = " ".join(detail_locations).lower()
 
-            # -----------------------------
-            # Classification + validation
-            # -----------------------------
             seniority, role = classify_job(title)
 
             region, is_remote, is_japan, remote_scope, is_valid = (
@@ -775,8 +788,6 @@ def scrape_workday(
 
             filteredcount += 1
             totaljobs += 1
-
-            seenids.add(str(externalpath))
 
             upsert_job(
                 job_row(
@@ -792,7 +803,7 @@ def scrape_workday(
                     is_japan,
                     remote_scope,
                     is_valid,
-                )
+               )
             )
 
         log_page(
@@ -801,11 +812,10 @@ def scrape_workday(
             api_total=total,
             raw_in_page=len(jobs),
             relevant_in_page=filteredcount,
+            extra=f"detail_calls={detail_calls}"
         )
 
-        # -----------------------------
-        # Early exit (performance fix)
-        # -----------------------------
+        # early exit
         if filteredcount == 0:
             no_relevant_pages += 1
         else:
@@ -815,20 +825,16 @@ def scrape_workday(
             log_stop(company_name, "2 consecutive irrelevant pages")
             break
 
-        # -----------------------------
-        # Pagination exit conditions
-        # -----------------------------
         if len(jobs) < pagesize:
-            log_stop(company_name, "last page (batch smaller than page size)")
+            log_stop(company_name, "last page")
             break
 
         if total and curoffset + pagesize >= total:
-            log_stop(company_name, "offset reached API total count")
+            log_stop(company_name, "reached total")
             break
 
         payload["offset"] += pagesize
-        time.sleep(random.uniform(1.0, 2.0))
-
+    
     log_summary(company_name, rawlistingstotal, totaljobs)
     mark_removed_jobs(company_name, seenids)
     log_success(company_name)
