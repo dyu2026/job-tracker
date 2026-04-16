@@ -2,7 +2,7 @@
 Job scrapers → Supabase (jobs + linkedin_posts).
 
 Drop-in companion to scraper.py: same external setup (utils, supabase_client, .env).
-Run: python job_scraper_sync.py
+Run: python scraper.py
 """
 
 from __future__ import annotations
@@ -23,7 +23,6 @@ from bs4 import BeautifulSoup
 
 from supabase_client import supabase
 from utils import classify_job, classify_location
-from typing import NamedTuple
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -31,6 +30,7 @@ from typing import NamedTuple
 
 REQUEST_TIMEOUT_S = 20
 SAFE_REQUEST_MAX_RETRIES = 3
+UNKNOWN_LOCATION = "Remote / Unknown"
 
 REMOTE_SCOPES_INCLUDED = frozenset({"global", "apac", "asia", "japan"})
 
@@ -41,12 +41,12 @@ LINKEDIN_INC_KEYWORDS = [
 ]
 
 LINKEDIN_EXC_KEYWORDS = [
-    "excited to announce", "i’m happy to share", "started a new position",
+    "excited to announce", "i'm happy to share", "started a new position",
     "looking for a new role", "i am looking", "please help me find", "I'm joining",
 ]
 
 # ---------------------------------------------------------------------------
-# Scrape logging ([Company] lines). LinkedIn + main() OS line stay unchanged.
+# Logging helpers
 # ---------------------------------------------------------------------------
 
 
@@ -124,7 +124,7 @@ def safe_request(method: str, url: str, **kwargs) -> requests.Response | None:
 
 
 # ---------------------------------------------------------------------------
-# Supabase
+# Supabase helpers
 # ---------------------------------------------------------------------------
 
 
@@ -139,10 +139,7 @@ def upsert_job(job_data: dict) -> None:
         .execute()
     )
 
-    if existing.data:
-        first_seen = existing.data[0]["first_seen_at"]
-    else:
-        first_seen = now
+    first_seen = existing.data[0]["first_seen_at"] if existing.data else now
 
     job_data["first_seen_at"] = first_seen
     job_data["last_seen_at"] = now
@@ -180,7 +177,7 @@ def mark_removed_jobs(company_name: str, seen_ids: set) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Shared job row + geography filter (same rules as original scraper.py)
+# Job row builder + geography filter
 # ---------------------------------------------------------------------------
 
 
@@ -216,6 +213,7 @@ def job_row(
     row.update(extra)
     return row
 
+
 def include_job(
     is_japan: bool,
     remote_scope,
@@ -230,22 +228,10 @@ def include_job(
         return "japan" in low or "tokyo" in low
     return False
 
-class LocationInfo(NamedTuple):
-    region: str
-    is_remote: bool
-    is_japan: bool
-    remote_scope: str
-    is_valid: bool
 
-def enrich_and_validate_location(location_name: str):
+def enrich_and_validate_location(location_name: str) -> tuple:
     region, is_remote, is_japan, remote_scope = classify_location(location_name)
-
-    is_valid = include_job(
-        is_japan=is_japan,
-        remote_scope=remote_scope,
-        location_name=location_name,
-    )
-
+    is_valid = include_job(is_japan=is_japan, remote_scope=remote_scope, location_name=location_name)
     return region, is_remote, is_japan, remote_scope, is_valid
 
 
@@ -285,13 +271,9 @@ def scrape_nextjs_company(
 ) -> None:
     log_start(company_name, "Next.js")
 
-    try:
-        res = safe_request("GET", careers_url)
-        if not res:
-            return
-        res.raise_for_status()
-    except Exception as e:
-        log_error(company_name, f"failed to fetch careers page: {e}")
+    res = safe_request("GET", careers_url)
+    if not res:
+        log_error(company_name, "failed to fetch careers page")
         return
 
     soup = BeautifulSoup(res.text, "html.parser")
@@ -339,30 +321,25 @@ def scrape_nextjs_company(
         external_id = job.get("id") or job.get("jobId") or job.get("requisition_id")
 
         location_obj = job.get("location")
-        if isinstance(location_obj, dict):
-            location_name = location_obj.get("name", "")
-        else:
-            location_name = str(location_obj or "")
+        location_name = location_obj.get("name", "") if isinstance(location_obj, dict) else str(location_obj or "")
 
-        job_url = None
         if job.get("absolute_url"):
-            if job["absolute_url"].startswith("/"):
-                job_url = f"https://miro.com{job['absolute_url']}"
-            else:
-                job_url = job["absolute_url"]
+            job_url = (
+                f"https://miro.com{job['absolute_url']}"
+                if job["absolute_url"].startswith("/")
+                else job["absolute_url"]
+            )
         elif job.get("url"):
             job_url = job["url"]
         elif job.get("applyUrl"):
             job_url = job["applyUrl"]
-
-        if not job_url:
+        else:
             job_url = f"https://miro.com/careers/vacancy/{job.get('id')}"
 
         if not title or not external_id:
             continue
 
         seniority, role = classify_job(title)
-
         region, is_remote, is_japan, remote_scope, is_valid = enrich_and_validate_location(location_name)
 
         if not is_valid:
@@ -374,18 +351,8 @@ def scrape_nextjs_company(
 
         upsert_job(
             job_row(
-                company_name,
-                external_id,
-                title,
-                location_name,
-                job_url,
-                seniority,
-                role,
-                region,
-                is_remote,
-                is_japan,
-                remote_scope,
-                is_valid,
+                company_name, external_id, title, location_name, job_url,
+                seniority, role, region, is_remote, is_japan, remote_scope, is_valid,
             )
         )
 
@@ -411,6 +378,7 @@ def scrape_miro() -> None:
 def scrape_greenhouse(company_slug: str, company_name: str) -> None:
     log_start(company_name, "Greenhouse")
     url = f"https://boards-api.greenhouse.io/v1/boards/{company_slug}/jobs"
+
     response = safe_request("GET", url)
     if not response:
         log_error(company_name, "no HTTP response from Greenhouse API after retries")
@@ -423,12 +391,9 @@ def scrape_greenhouse(company_slug: str, company_name: str) -> None:
     relevant = 0
 
     for job in jobs:
-        location_name = ""
-        if isinstance(job.get("location"), dict):
-            location_name = job["location"].get("name", "")
+        location_name = job["location"].get("name", "") if isinstance(job.get("location"), dict) else ""
 
         seniority, role = classify_job(job["title"])
-
         region, is_remote, is_japan, remote_scope, is_valid = enrich_and_validate_location(location_name)
 
         if not is_valid:
@@ -440,18 +405,8 @@ def scrape_greenhouse(company_slug: str, company_name: str) -> None:
 
         upsert_job(
             job_row(
-                company_name,
-                external_id,
-                job["title"],
-                location_name,
-                job["absolute_url"],
-                seniority,
-                role,
-                region,
-                is_remote,
-                is_japan,
-                remote_scope,
-                is_valid,
+                company_name, external_id, job["title"], location_name, job["absolute_url"],
+                seniority, role, region, is_remote, is_japan, remote_scope, is_valid,
             )
         )
 
@@ -464,7 +419,8 @@ def scrape_greenhouse(company_slug: str, company_name: str) -> None:
 # Ashby
 # ---------------------------------------------------------------------------
 
-def slugify(title: str) -> str:
+
+def _slugify(title: str) -> str:
     slug = title.lower()
     slug = re.sub(r"[^\w\s-]", "", slug)
     slug = re.sub(r"\s+", "-", slug)
@@ -472,25 +428,34 @@ def slugify(title: str) -> str:
     return slug.strip("-")
 
 
-def validate_url(url: str) -> bool:
+def _validate_url(url: str) -> bool:
+    """HEAD-style check: returns True only if the URL resolves and isn't a soft 404."""
     try:
         r = requests.get(url, timeout=5)
-
         if r.status_code != 200:
             return False
-
         content = r.text.lower()
-        if "page not found" in content or "not found" in content:
-            return False
-
-        return True
-    except:
+        return "page not found" not in content and "not found" not in content
+    except Exception:
         return False
+
+
+def _resolve_cursor_url(title: str, external_id: str, api_apply_url: str | None) -> str:
+    """Return the best available URL for a Cursor job listing."""
+    slug = _slugify(title or "")
+    slug_url = f"https://cursor.com/ja/careers/{slug}"
+
+    if _validate_url(slug_url):
+        return slug_url
+    if api_apply_url and _validate_url(api_apply_url):
+        return api_apply_url
+    return f"https://jobs.ashbyhq.com/cursor/{external_id}"
 
 
 def scrape_ashby(company_slug: str, company_name: str) -> None:
     log_start(company_name, "Ashby")
     url = f"https://api.ashbyhq.com/posting-api/job-board/{company_slug}"
+
     response = safe_request("GET", url)
     if not response:
         log_error(company_name, "no HTTP response from Ashby API after retries")
@@ -504,64 +469,36 @@ def scrape_ashby(company_slug: str, company_name: str) -> None:
 
     for job in jobs:
         title = job.get("title")
-        location_name = ""
+        external_id = str(job["id"])
 
-        if isinstance(job.get("location"), dict):
-            location_name = job["location"].get("name", "")
-        elif isinstance(job.get("location"), str):
-            location_name = job.get("location", "")
+        location_obj = job.get("location")
+        if isinstance(location_obj, dict):
+            location_name = location_obj.get("name", "")
+        elif isinstance(location_obj, str):
+            location_name = location_obj
         elif job.get("locations"):
-            location_list = [loc.get("name", "") for loc in job["locations"]]
-            location_name = "; ".join(location_list)
+            location_name = "; ".join(loc.get("name", "") for loc in job["locations"])
+        else:
+            location_name = ""
 
         seniority, role = classify_job(title)
-        
         region, is_remote, is_japan, remote_scope, is_valid = enrich_and_validate_location(location_name)
 
         if not is_valid:
             continue
 
-        external_id = str(job["id"])
+        if company_slug == "cursor":
+            apply_url = _resolve_cursor_url(title, external_id, job.get("applyUrl"))
+        else:
+            apply_url = job.get("applyUrl") or f"https://jobs.ashbyhq.com/{company_slug}/{external_id}"
+
         seen_ids.add(external_id)
         relevant += 1
 
-        # --- URL LOGIC (Cursor-specific) ---
-        apply_url = job.get("applyUrl")
-
-        if company_slug == "cursor":
-            # 1. Try Cursor slug page (PRIMARY)
-            slug = slugify(title or "")
-            cursor_url = f"https://cursor.com/ja/careers/{slug}"
-
-            if validate_url(cursor_url):
-                apply_url = cursor_url
-            else:
-                # 2. fallback to API applyUrl if valid
-                if apply_url and validate_url(apply_url):
-                    pass  # keep apply_url
-                else:
-                    # 3. final fallback (likely soft 404 but safe)
-                    apply_url = f"https://jobs.ashbyhq.com/{company_slug}/{external_id}"
-
-        # --- default behavior for other Ashby companies ---
-        else:
-            if not apply_url:
-                apply_url = f"https://jobs.ashbyhq.com/{company_slug}/{external_id}"
-
         upsert_job(
             job_row(
-                company_name,
-                external_id,
-                title,
-                location_name,
-                apply_url,
-                seniority,
-                role,
-                region,
-                is_remote,
-                is_japan,
-                remote_scope,
-                is_valid,
+                company_name, external_id, title, location_name, apply_url,
+                seniority, role, region, is_remote, is_japan, remote_scope, is_valid,
             )
         )
 
@@ -607,37 +544,25 @@ def scrape_smartrecruiters(company_slug: str, company_name: str) -> None:
     for job in all_jobs:
         title = job.get("name", "")
         loc = job.get("location") or {}
-        city = loc.get("city", "")
-        region_name = loc.get("region", "")
-        country = loc.get("country", "")
-        location_name = ", ".join(p for p in (city, region_name, country) if p)
+        location_name = ", ".join(
+            p for p in (loc.get("city", ""), loc.get("region", ""), loc.get("country", "")) if p
+        )
 
         seniority, role = classify_job(title)
-        
         region, is_remote, is_japan, remote_scope, is_valid = enrich_and_validate_location(location_name)
 
         if not is_valid:
             continue
 
-        job_id = job.get("id")
-        external_id = str(job_id)
+        external_id = str(job.get("id"))
         seen_ids.add(external_id)
         relevant += 1
 
         upsert_job(
             job_row(
-                company_name,
-                external_id,
-                title,
-                location_name,
-                f"https://jobs.smartrecruiters.com/{company_slug.capitalize()}/{job_id}",
-                seniority,
-                role,
-                region,
-                is_remote,
-                is_japan,
-                remote_scope,
-                is_valid,
+                company_name, external_id, title, location_name,
+                f"https://jobs.smartrecruiters.com/{company_slug.capitalize()}/{external_id}",
+                seniority, role, region, is_remote, is_japan, remote_scope, is_valid,
             )
         )
 
@@ -658,12 +583,8 @@ def scrape_workday(
     facet: str = "locations",
 ) -> None:
     parts = company_slug.split("|")
-
-    if len(parts) == 3:
-        subdomain, tenant, cluster = parts
-    else:
-        subdomain, tenant = parts
-        cluster = "wd5"
+    subdomain, tenant = parts[0], parts[1]
+    cluster = parts[2] if len(parts) == 3 else "wd5"
 
     api_url = (
         f"https://{subdomain}.{cluster}.myworkdayjobs.com/wday/cxs/"
@@ -681,7 +602,7 @@ def scrape_workday(
     page_size = 20
     max_offset = 200
 
-    payload = {
+    payload: dict = {
         "limit": page_size,
         "offset": 0,
         "searchText": "",
@@ -689,22 +610,15 @@ def scrape_workday(
     }
 
     if location_ids:
-        if not isinstance(location_ids, list):
-            location_ids = [location_ids]
-        payload["appliedFacets"][facet] = location_ids
+        payload["appliedFacets"][facet] = (
+            location_ids if isinstance(location_ids, list) else [location_ids]
+        )
 
     seen_ids: set = set()
     total_jobs = 0
     raw_listings_total = 0
-    exited_on_http_error = False
 
     log_start(company_name, "Workday")
-
-    def is_japan_override(location_name: str, external_path) -> bool:
-        if location_name.lower() in ("2 locations", "multiple locations"):
-            if external_path and "japan" in external_path.lower():
-                return True
-        return False
 
     while True:
         cur_offset = payload["offset"]
@@ -716,13 +630,11 @@ def scrape_workday(
         response = safe_request("POST", api_url, json=payload, headers=headers)
         if not response:
             log_error(company_name, "no HTTP response from Workday API after retries")
-            exited_on_http_error = True
-            break
+            return
 
         if response.status_code != 200:
             log_error(company_name, f"Workday API HTTP status {response.status_code}")
-            exited_on_http_error = True
-            break
+            return
 
         data = response.json()
         jobs = data.get("jobPostings", [])
@@ -734,7 +646,6 @@ def scrape_workday(
             break
 
         new_ids = {job.get("externalPath") for job in jobs}
-
         if new_ids.issubset(seen_ids):
             log_stop(company_name, "duplicate page (same IDs as prior page)")
             break
@@ -746,13 +657,9 @@ def scrape_workday(
             external_path = job.get("externalPath")
 
             if job.get("locations"):
-                location_name = " / ".join(
-                    loc.get("locationName", "") for loc in job["locations"]
-                )
+                location_name = " / ".join(loc.get("locationName", "") for loc in job["locations"])
             else:
                 location_name = job.get("locationsText", "")
-
-            override_japan = is_japan_override(location_name, external_path)
 
             seniority, role = classify_job(title)
             region, is_remote, is_japan, remote_scope, is_valid = enrich_and_validate_location(location_name)
@@ -764,18 +671,9 @@ def scrape_workday(
 
             upsert_job(
                 job_row(
-                    company_name,
-                    external_path,
-                    title,
-                    location_name,
+                    company_name, external_path, title, location_name,
                     f"https://{subdomain}.{cluster}.myworkdayjobs.com/en-US/{tenant}{external_path}",
-                    seniority,
-                    role,
-                    region,
-                    is_remote,
-                    is_japan,
-                    remote_scope,
-                    is_valid,
+                    seniority, role, region, is_remote, is_japan, remote_scope, is_valid,
                 )
             )
             total_jobs += 1
@@ -807,8 +705,7 @@ def scrape_workday(
 
     log_summary(company_name, raw_listings_total, total_jobs)
     mark_removed_jobs(company_name, seen_ids)
-    if not exited_on_http_error:
-        log_success(company_name)
+    log_success(company_name)
 
 
 # ---------------------------------------------------------------------------
@@ -819,8 +716,8 @@ def scrape_workday(
 def scrape_lever(company_slug: str, company_name: str) -> None:
     log_start(company_name, "Lever")
     url = f"https://api.lever.co/v0/postings/{company_slug}?mode=json"
-    response = safe_request("GET", url)
 
+    response = safe_request("GET", url)
     if not response:
         log_error(company_name, "no HTTP response from Lever API after retries")
         return
@@ -853,18 +750,8 @@ def scrape_lever(company_slug: str, company_name: str) -> None:
 
         upsert_job(
             job_row(
-                company_name,
-                external_id,
-                title,
-                location_name,
-                job.get("hostedUrl"),
-                seniority,
-                role,
-                region,
-                is_remote,
-                is_japan,
-                remote_scope,
-                is_valid,
+                company_name, external_id, title, location_name, job.get("hostedUrl"),
+                seniority, role, region, is_remote, is_japan, remote_scope, is_valid,
             )
         )
 
@@ -928,18 +815,8 @@ def scrape_monday(company_name: str = "monday.com") -> None:
 
         upsert_job(
             job_row(
-                company_name,
-                external_id,
-                title,
-                location_name,
-                job_url,
-                seniority,
-                role,
-                region,
-                is_remote,
-                is_japan,
-                remote_scope,
-                is_valid,
+                company_name, external_id, title, location_name, job_url,
+                seniority, role, region, is_remote, is_japan, remote_scope, is_valid,
             )
         )
 
@@ -962,7 +839,6 @@ def scrape_eightfold(company_slug: str, company_name: str, location: str, pid: s
     total_jobs = 0
     raw_listings_total = 0
     seen_ids: set = set()
-    exited_on_http_error = False
 
     while True:
         if start > max_offset:
@@ -980,20 +856,10 @@ def scrape_eightfold(company_slug: str, company_name: str, location: str, pid: s
             "triggerGoButton": "false",
         }
 
-        r = safe_request(
-            "GET",
-            base_url,
-            params=params,
-            headers={"User-Agent": "Mozilla/5.0"},
-        )
-
+        r = safe_request("GET", base_url, params=params, headers={"User-Agent": "Mozilla/5.0"})
         if not r or r.status_code != 200:
-            log_error(
-                company_name,
-                f"Eightfold API: {getattr(r, 'status_code', 'no response')}",
-            )
-            exited_on_http_error = True
-            break
+            log_error(company_name, f"Eightfold API: {getattr(r, 'status_code', 'no response')}")
+            return
 
         data = r.json()
         jobs = data.get("positions", [])
@@ -1023,29 +889,14 @@ def scrape_eightfold(company_slug: str, company_name: str, location: str, pid: s
 
             upsert_job(
                 job_row(
-                    company_name,
-                    external_id,
-                    title,
-                    location_name,
-                    job_url,
-                    seniority,
-                    role,
-                    region,
-                    is_remote,
-                    is_japan,
-                    remote_scope,
-                    is_valid,
+                    company_name, external_id, title, location_name, job_url,
+                    seniority, role, region, is_remote, is_japan, remote_scope, is_valid,
                 )
             )
             total_jobs += 1
             page_relevant += 1
 
-        log_page(
-            company_name,
-            start=start,
-            raw_in_page=len(jobs),
-            relevant_in_page=page_relevant,
-        )
+        log_page(company_name, start=start, raw_in_page=len(jobs), relevant_in_page=page_relevant)
 
         if len(jobs) < page_size:
             log_stop(company_name, "last page (batch smaller than page size)")
@@ -1055,8 +906,7 @@ def scrape_eightfold(company_slug: str, company_name: str, location: str, pid: s
 
     log_summary(company_name, raw_listings_total, total_jobs)
     mark_removed_jobs(company_name, seen_ids)
-    if not exited_on_http_error:
-        log_success(company_name)
+    log_success(company_name)
 
 
 # ---------------------------------------------------------------------------
@@ -1079,14 +929,12 @@ def scrape_bamboohr(subdomain: str, company_name: str) -> None:
         log_error(company_name, f"invalid JSON from BambooHR: {e}")
         return
 
-    jobs = []
     if isinstance(data, list):
         jobs = data
     elif isinstance(data, dict):
-        if "result" in data:
-            jobs = data["result"]
-        elif "jobs" in data:
-            jobs = data["jobs"]
+        jobs = data.get("result") or data.get("jobs") or []
+    else:
+        jobs = []
 
     raw_total = len(jobs)
     log_page(company_name, offset=0, raw_in_page=raw_total, extra="single list response")
@@ -1100,25 +948,22 @@ def scrape_bamboohr(subdomain: str, company_name: str) -> None:
             or job.get("title")
             or job.get("name")
         )
-        external_id = job.get("id") or job.get("jobId")
+        external_id = str(job.get("id") or job.get("jobId") or "")
         if not title or not external_id:
             continue
 
-        external_id = str(external_id)
-
-        location_name = ""
         location = job.get("location")
         if isinstance(location, dict):
-            city = location.get("city")
-            state = location.get("state")
-            parts = [p for p in (city, state) if p]
-            if parts:
-                location_name = ", ".join(parts)
+            location_name = ", ".join(
+                p for p in (location.get("city"), location.get("state")) if p
+            )
         elif isinstance(location, str):
             location_name = location
+        else:
+            location_name = UNKNOWN_LOCATION
 
         if not location_name:
-            location_name = "Remote / Unknown"
+            location_name = UNKNOWN_LOCATION
 
         job_url = f"https://{subdomain}.bamboohr.com/careers/{external_id}"
 
@@ -1133,18 +978,8 @@ def scrape_bamboohr(subdomain: str, company_name: str) -> None:
 
         upsert_job(
             job_row(
-                company_name,
-                external_id,
-                title,
-                location_name,
-                job_url,
-                seniority,
-                role,
-                region,
-                is_remote,
-                is_japan,
-                remote_scope,
-                is_valid,
+                company_name, external_id, title, location_name, job_url,
+                seniority, role, region, is_remote, is_japan, remote_scope, is_valid,
             )
         )
 
@@ -1174,7 +1009,6 @@ def scrape_netflix() -> None:
     seen_ids: set[str] = set()
     raw_listings_total = 0
     relevant_total = 0
-    exited_on_http_error = False
 
     while True:
         params["start"] = start
@@ -1183,8 +1017,7 @@ def scrape_netflix() -> None:
             r = safe_request("GET", base_url, params=params)
             if not r:
                 log_error(company_name, "no HTTP response from Netflix API after retries")
-                exited_on_http_error = True
-                break
+                return
             data = r.json()
         except Exception as e:
             log_error(company_name, f"Netflix request or JSON parse failed: {e}")
@@ -1224,47 +1057,30 @@ def scrape_netflix() -> None:
 
             upsert_job(
                 job_row(
-                    company_name,
-                    external_id,
-                    title,
-                    location_name,
-                    job_url,
-                    seniority,
-                    role,
-                    region,
-                    is_remote,
-                    is_japan,
-                    remote_scope,
-                    is_valid,
+                    company_name, external_id, title, location_name, job_url,
+                    seniority, role, region, is_remote, is_japan, remote_scope, is_valid,
                 )
             )
             page_stored += 1
 
-        log_page(
-            company_name,
-            start=start,
-            raw_in_page=len(jobs),
-            relevant_in_page=page_stored,
-        )
+        log_page(company_name, start=start, raw_in_page=len(jobs), relevant_in_page=page_stored)
         relevant_total += page_stored
-
         start += params["num"]
 
     log_summary(company_name, raw_listings_total, relevant_total)
     mark_removed_jobs(company_name, seen_ids)
-    if not exited_on_http_error:
-        log_success(company_name)
+    log_success(company_name)
+
 
 # ---------------------------------------------------------------------------
 # Uber
 # ---------------------------------------------------------------------------
 
+
 def scrape_uber(company_name: str = "Uber") -> None:
     log_start(company_name, "Uber API")
 
     url = "https://www.uber.com/api/loadSearchJobsResults"
-    params = {"localeCode": "ja-JP"}
-
     headers = {
         "Content-Type": "application/json",
         "Accept": "application/json",
@@ -1284,15 +1100,12 @@ def scrape_uber(company_name: str = "Uber") -> None:
         payload = {
             "limit": limit,
             "page": page,
-            "params": {
-                "location": [{"country": "JPN", "city": "Tokyo"}]
-            },
+            "params": {"location": [{"country": "JPN", "city": "Tokyo"}]},
         }
 
         response = safe_request(
-            "POST",
-            url,
-            params=params,
+            "POST", url,
+            params={"localeCode": "ja-JP"},
             json=payload,
             headers=headers,
         )
@@ -1323,51 +1136,37 @@ def scrape_uber(company_name: str = "Uber") -> None:
             if not external_id or not title:
                 continue
 
-            job_url = f"https://www.uber.com/global/en/careers/list/{external_id}/"
-
             seniority, role = classify_job(title)
             region, is_remote, is_japan, remote_scope, is_valid = enrich_and_validate_location(location_name)
 
             if not is_valid:
                 continue
 
-
             seen_ids.add(external_id)
             page_relevant += 1
 
             upsert_job(
                 job_row(
-                    company_name,
-                    external_id,
-                    title,
-                    location_name,
-                    job_url,
-                    seniority,
-                    role,
-                    region,
-                    is_remote,
-                    is_japan,
-                    remote_scope,
-                    is_valid,
+                    company_name, external_id, title, location_name,
+                    f"https://www.uber.com/global/en/careers/list/{external_id}/",
+                    seniority, role, region, is_remote, is_japan, remote_scope, is_valid,
                 )
             )
 
-        log_page(
-            company_name,
-            offset=page,
-            raw_in_page=len(results),
-            relevant_in_page=page_relevant,
-        )
-
+        log_page(company_name, offset=page, raw_in_page=len(results), relevant_in_page=page_relevant)
         relevant_total += page_relevant
 
-        # stop if last page
         if len(results) < limit:
             log_stop(company_name, "last page (results < limit)")
             break
 
         page += 1
         time.sleep(random.uniform(1.0, 2.0))
+
+    log_summary(company_name, raw_total, relevant_total)
+    mark_removed_jobs(company_name, seen_ids)
+    log_success(company_name)
+
 
 # ---------------------------------------------------------------------------
 # LinkedIn (Google News RSS)
@@ -1403,9 +1202,7 @@ def scrape_linkedin() -> None:
 
     print(f"LinkedIn feed entries: {len(feed.entries)}")
 
-    supabase.table("linkedin_posts").delete().lt(
-        "published_at", cutoff.isoformat()
-    ).execute()
+    supabase.table("linkedin_posts").delete().lt("published_at", cutoff.isoformat()).execute()
 
     for entry in feed.entries:
         if not hasattr(entry, "published_parsed") or entry.published_parsed is None:
@@ -1417,9 +1214,8 @@ def scrape_linkedin() -> None:
 
         title = entry.title
         summary = entry.get("summary", "")
-        combined_text = title + " " + summary
 
-        if not linkedin_matches_filters(combined_text):
+        if not linkedin_matches_filters(title + " " + summary):
             continue
 
         url = extract_linkedin_url(summary) or entry.link
@@ -1444,7 +1240,7 @@ def scrape_linkedin() -> None:
 
 
 def _task_label(func, args: tuple) -> str:
-    """Human-readable name for logs (same rules as legacy scraper.py run_task)."""
+    """Human-readable name for logs."""
     if len(args) >= 2:
         return args[1]
     if len(args) == 1 and isinstance(args[0], str):
