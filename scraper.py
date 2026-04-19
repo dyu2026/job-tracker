@@ -1411,8 +1411,6 @@ def scrape_meta(company_name: str = "Meta") -> None:
                     enrich_and_validate_location(location_name)
                 )
 
-                print(f"[Meta DEBUG] {title} | {location_name} | valid={is_valid}")
-
                 if not is_valid:
                     continue
 
