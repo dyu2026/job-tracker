@@ -23,6 +23,7 @@ from bs4 import BeautifulSoup
 
 from supabase_client import supabase
 from utils import classify_job, classify_location
+from playwright.sync_api import sync_playwright
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -1299,6 +1300,157 @@ def scrape_uber(company_name: str = "Uber") -> None:
     mark_removed_jobs(company_name, seen_ids)
     log_success(company_name)
 
+# ---------------------------------------------------------------------------
+# Meta
+# ---------------------------------------------------------------------------
+
+def scrape_meta(company_name: str = "Meta") -> None:
+
+    log_start(company_name, "Meta GraphQL")
+
+    seen_ids: set[str] = set()
+    raw_total = 0
+    relevant = 0
+
+    # --- helpers ---
+    def extract_meta_jobs(data: dict) -> list[dict]:
+        jobs = []
+
+        try:
+            d = data.get("data", {})
+
+            if "job_search_with_featured_jobs" not in d:
+                return []
+
+            all_jobs = d["job_search_with_featured_jobs"].get("all_jobs", [])
+
+            for j in all_jobs:
+                jobs.append({
+                    "id": j.get("id"),
+                    "title": j.get("title"),
+                    "locations": j.get("locations", []),
+                })
+
+        except Exception as e:
+            print(f"[Meta ERROR] extract failed: {e}")
+
+        return jobs
+
+    def normalize_meta_location(job: dict) -> str:
+        locations = job.get("locations", [])
+
+        if not locations:
+            return ""
+
+        names = []
+        for loc in locations:
+            if isinstance(loc, dict):
+                name = loc.get("name", "")
+            else:
+                name = str(loc)
+
+            if name:
+                names.append(name)
+
+        if not names:
+            return ""
+
+        # ✅ PRIORITY: return Japan location if present
+        for name in names:
+            if "Japan" in name:
+                return name
+
+        # fallback to first
+        return names[0]
+
+    # --- Playwright ---
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
+
+        def handle_response(response):
+            nonlocal raw_total, relevant
+
+            # Only care about GraphQL
+            if "graphql" not in response.url:
+                return
+
+            try:
+                data = response.json()
+            except Exception:
+                return
+
+            if "job_search_with_featured_jobs" not in data.get("data", {}):
+                return
+
+            jobs = extract_meta_jobs(data)
+            if not jobs:
+                return
+
+            print(f"[Meta DEBUG] Found {len(jobs)} jobs")
+
+            raw_total += len(jobs)
+
+            for job in jobs:
+                title = job.get("title")
+                external_id = job.get("id")
+
+                if not title or not external_id:
+                    continue
+
+                external_id = str(external_id)
+
+                if external_id in seen_ids:
+                    continue
+                seen_ids.add(external_id)
+
+                location_name = normalize_meta_location(job)
+
+                seniority, role = classify_job(title)
+                region, is_remote, is_japan, remote_scope, is_valid = (
+                    enrich_and_validate_location(location_name)
+                )
+
+                print(f"[Meta DEBUG] {title} | {location_name} | valid={is_valid}")
+
+                if not is_valid:
+                    continue
+
+                relevant += 1
+
+                upsert_job(
+                    job_row(
+                        company_name,
+                        external_id,
+                        title,
+                        location_name,
+                        f"https://www.metacareers.com/jobs/{external_id}/",
+                        seniority,
+                        role,
+                        region,
+                        is_remote,
+                        is_japan,
+                        remote_scope,
+                        is_valid,
+                    )
+                )
+
+        page.on("response", handle_response)
+
+        page.goto(
+            "https://www.metacareers.com/jobsearch?offices[0]=Tokyo%2C%20Japan",
+            wait_until="networkidle"
+        )
+
+        # wait for GraphQL responses
+        page.wait_for_timeout(8000)
+
+        browser.close()
+
+    log_summary(company_name, raw_total, relevant)
+    mark_removed_jobs(company_name, seen_ids)
+    log_success(company_name)
+
 
 # ---------------------------------------------------------------------------
 # LinkedIn (Google News RSS)
@@ -1398,6 +1550,7 @@ def run_task(func, *args) -> None:
 
 SCRAPER_TASKS: list[tuple] = [
     (scrape_miro,),
+    (scrape_meta,),
     (scrape_monday,),
     (scrape_greenhouse, "nansen", "Nansen"),
     (scrape_greenhouse, "brave", "Brave"),
