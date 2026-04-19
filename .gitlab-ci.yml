@@ -17,6 +17,7 @@ before_script:
   - python --version
   - pip install --upgrade pip
   - pip install --disable-pip-version-check -r requirements.txt
+  - playwright install chromium
 
 scrape_jobs:
   stage: scrape
