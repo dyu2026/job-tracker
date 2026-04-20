@@ -63,19 +63,20 @@ Scraping scripts run periodically and store results in a database.
 A dashboard then queries the database to visualize the results.
 
 
+```
 Company Career Sites
-│
-▼
-Python Scrapers
+        │
+        ▼
+   Python Scrapers
 (API + HTML + GraphQL)
-│
-▼
-Supabase
+        │
+        ▼
+     Supabase
 (Postgres Database)
-│
-▼
-Streamlit Cloud App
-
+        │
+        ▼
+  Streamlit Cloud App
+```
 
 ---
 
