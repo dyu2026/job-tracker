@@ -1449,6 +1449,130 @@ def scrape_meta(company_name: str = "Meta") -> None:
     mark_removed_jobs(company_name, seen_ids)
     log_success(company_name)
 
+# ---------------------------------------------------------------------------
+# Wayve (FirstStage)
+# ---------------------------------------------------------------------------
+
+def scrape_wayve(company_name: str = "Wayve") -> None:
+
+    log_start(company_name, "FirstStage")
+
+    url = "https://wayve.firststage.co/jobs"
+
+    response = safe_request(
+        "GET",
+        url,
+        headers={"User-Agent": "Mozilla/5.0"},
+    )
+
+    if not response or response.status_code != 200:
+        log_error(company_name, f"HTTP error: {getattr(response, 'status_code', 'no response')}")
+        return
+
+    soup = BeautifulSoup(response.text, "html.parser")
+
+    links = soup.select("a[href*='/jobs/']")
+
+    raw_total = len(links)
+    relevant = 0
+    seen_ids: set[str] = set()
+
+    log_page(company_name, offset=0, raw_in_page=raw_total, extra="HTML parse")
+
+    # --- parsing helper (from your tested minimal script) ---
+    def split_title_location(text: str):
+        text = " ".join(text.split())  # normalize whitespace
+
+        # remove noise
+        noise_patterns = [
+            r"full time.*$",
+            r"part time.*$",
+            r"on-site.*$",
+            r"remote.*$",
+        ]
+        for p in noise_patterns:
+            text = re.sub(p, "", text, flags=re.IGNORECASE).strip()
+
+        location_patterns = [
+            r"(Tokyo, Japan)",
+            r"(Yokohama, Japan)",
+            r"(London, United Kingdom)",
+            r"(Sunnyvale, California USA)",
+            r"(Detroit, Michigan USA)",
+            r"(Herzliya, Israel)",
+            r"(Leonberg, Germany)",
+            r"(Location Flexible)",
+        ]
+
+        for loc_pattern in location_patterns:
+            match = re.search(loc_pattern + r"$", text)
+            if match:
+                location = match.group(1).strip()
+                title = text[:match.start()].strip()
+                title = title.rstrip(",- ").strip()
+                return title, location
+
+        return text.strip(), UNKNOWN_LOCATION
+
+    # --- main loop ---
+    for a in links:
+        href = a.get("href")
+
+        if not href or "/jobs/" not in href:
+            continue
+
+        # fix link
+        if href.startswith("http"):
+            job_url = href
+        else:
+            job_url = "https://wayve.firststage.co" + href
+
+        # extract job id
+        try:
+            external_id = job_url.split("/jobs/")[1].split("/")[0]
+        except Exception:
+            continue
+
+        if not external_id:
+            continue
+
+        raw_text = a.get_text(" ", strip=True)
+        if not raw_text:
+            continue
+
+        title, location_name = split_title_location(raw_text)
+
+        seniority, role = classify_job(title)
+        region, is_remote, is_japan, remote_scope, is_valid = (
+            enrich_and_validate_location(location_name)
+        )
+
+        if not is_valid:
+            continue
+
+        seen_ids.add(external_id)
+        relevant += 1
+
+        upsert_job(
+            job_row(
+                company_name,
+                external_id,
+                title,
+                location_name,
+                job_url,
+                seniority,
+                role,
+                region,
+                is_remote,
+                is_japan,
+                remote_scope,
+                is_valid,
+            )
+        )
+
+    log_summary(company_name, raw_total, relevant)
+    mark_removed_jobs(company_name, seen_ids)
+    log_success(company_name)
 
 # ---------------------------------------------------------------------------
 # LinkedIn (Google News RSS)
@@ -1549,6 +1673,7 @@ def run_task(func, *args) -> None:
 SCRAPER_TASKS: list[tuple] = [
     (scrape_miro,),
     (scrape_meta,),
+    (scrape_wayve,),
     (scrape_monday,),
     (scrape_greenhouse, "nansen", "Nansen"),
     (scrape_greenhouse, "brave", "Brave"),
