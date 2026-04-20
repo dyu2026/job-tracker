@@ -24,7 +24,7 @@ The project acts as a small **job intelligence system**, helping surface opportu
 
 ## Live Demo
 Streamlit dashboard:
-https://jobdashboard-nhkufxqgmqckb6qxa5caam.streamlit.app/
+https://tokyojobs.streamlit.app/
 
 ---
 
