@@ -1209,11 +1209,36 @@ def scrape_netflix() -> None:
 # Uber
 # ---------------------------------------------------------------------------
 
+def extract_uber_location(job):
+    """
+    Build a clean 'City, Country' string.
+    Prioritizes Japan locations, including multi-location roles.
+    """
+
+    # 1. Try primary location
+    loc = job.get("location") or {}
+    if loc.get("country") == "JPN":
+        city = loc.get("city")
+        country = loc.get("countryName", "Japan")
+        if city:
+            return f"{city}, {country}"
+
+    # 2. Fallback: check allLocations
+    for loc in job.get("allLocations", []):
+        if loc.get("country") == "JPN":
+            city = loc.get("city")
+            country = loc.get("countryName", "Japan")
+            if city:
+                return f"{city}, {country}"
+
+    return None  # no Japan location found
+
 
 def scrape_uber(company_name: str = "Uber") -> None:
     log_start(company_name, "Uber API")
 
     url = "https://www.uber.com/api/loadSearchJobsResults"
+
     headers = {
         "Content-Type": "application/json",
         "Accept": "application/json",
@@ -1225,6 +1250,7 @@ def scrape_uber(company_name: str = "Uber") -> None:
 
     page = 0
     limit = 10
+
     raw_total = 0
     relevant_total = 0
     seen_ids: set[str] = set()
@@ -1233,11 +1259,16 @@ def scrape_uber(company_name: str = "Uber") -> None:
         payload = {
             "limit": limit,
             "page": page,
-            "params": {"location": [{"country": "JPN", "city": "Tokyo"}]},
+            "params": {
+                "location": [
+                    {"country": "JPN"}  # keep this to avoid global explosion
+                ]
+            },
         }
 
         response = safe_request(
-            "POST", url,
+            "POST",
+            url,
             params={"localeCode": "ja-JP"},
             json=payload,
             headers=headers,
@@ -1253,7 +1284,13 @@ def scrape_uber(company_name: str = "Uber") -> None:
             log_error(company_name, f"JSON parse failed at page={page}: {e}")
             break
 
-        results = data.get("data", {}).get("results", [])
+        results = data.get("data", {}).get("results")
+
+        # 🔴 Uber API sometimes returns None instead of []
+        if not isinstance(results, list):
+            log_error(company_name, f"invalid results at page={page}: {results}")
+            break
+
         if not results:
             log_stop(company_name, f"empty results at page={page}")
             break
@@ -1264,15 +1301,26 @@ def scrape_uber(company_name: str = "Uber") -> None:
         for job in results:
             external_id = str(job.get("id"))
             title = job.get("title")
-            location_name = job.get("location", {}).get("name", "Tokyo, Japan")
 
             if not external_id or not title:
                 continue
 
+            # ✅ FIXED location extraction
+            location_name = extract_uber_location(job)
+
+            if not location_name:
+                # DEBUG visibility (remove later if noisy)
+                log_error(company_name, f"filtered_no_japan_location | {external_id} | {title}")
+                continue
+
+            # classification
             seniority, role = classify_job(title)
+
+            # validation
             region, is_remote, is_japan, remote_scope, is_valid = enrich_and_validate_location(location_name)
 
             if not is_valid:
+                log_error(company_name, f"filtered_invalid_location | {external_id} | {location_name}")
                 continue
 
             seen_ids.add(external_id)
@@ -1280,15 +1328,31 @@ def scrape_uber(company_name: str = "Uber") -> None:
 
             upsert_job(
                 job_row(
-                    company_name, external_id, title, location_name,
+                    company_name,
+                    external_id,
+                    title,
+                    location_name,
                     f"https://www.uber.com/global/en/careers/list/{external_id}/",
-                    seniority, role, region, is_remote, is_japan, remote_scope, is_valid,
+                    seniority,
+                    role,
+                    region,
+                    is_remote,
+                    is_japan,
+                    remote_scope,
+                    is_valid,
                 )
             )
 
-        log_page(company_name, offset=page, raw_in_page=len(results), relevant_in_page=page_relevant)
+        log_page(
+            company_name,
+            offset=page,
+            raw_in_page=len(results),
+            relevant_in_page=page_relevant,
+        )
+
         relevant_total += page_relevant
 
+        # pagination stop condition
         if len(results) < limit:
             log_stop(company_name, "last page (results < limit)")
             break
@@ -1765,6 +1829,7 @@ def run_task(func, *args) -> None:
 
 SCRAPER_TASKS: list[tuple] = [
     (scrape_miro,),
+    (scrape_uber,),
     (scrape_meta,),
     (scrape_wayve,),
     (scrape_waymo,),
@@ -1873,7 +1938,6 @@ SCRAPER_TASKS: list[tuple] = [
     (scrape_lever, "kinsta", "Kinsta"),
     (scrape_bamboohr, "lottiefiles", "LottieFiles"),
     (scrape_netflix,),
-    (scrape_uber,),
     (scrape_linkedin,),
 ]
 
