@@ -17,6 +17,8 @@ JAPAN_LOCATION_TERMS = (
 # --- Location: remote string suggests "work from anywhere" style ---
 
 GLOBAL_REMOTE_TERMS = ("anywhere", "worldwide", "global")
+REMOTE_SYNONYMS = ("remote", "home based", "home-based", "wfh", "work from home")
+
 
 # --- Location: if remote but text looks tied to these regions, scope = restricted ---
 
@@ -180,41 +182,37 @@ def classify_job(title: str) -> tuple[str, str]:
     role = classify_role(title)
     return seniority, role
 
-
-def classify_location(
-    location_name: str | None,
-) -> tuple[str | None, bool, bool, str | None]:
-    """
-    From a single location string, return:
-        region_label, is_remote, is_japan, remote_scope
-
-    remote_scope is None unless the text implies remote; then one of
-    global / apac / restricted / japan (japan only when is_japan).
-    """
+def classify_location(location_name: str | None) -> tuple[str | None, bool, bool, str | None]:
     if not location_name:
         return None, False, False, None
 
     loc = location_name.lower().strip()
 
     is_japan = any(term in loc for term in JAPAN_LOCATION_TERMS)
-    is_remote = "remote" in loc
+    
+    is_remote = any(term in loc for term in REMOTE_SYNONYMS)
+    
     remote_scope: str | None = None
 
     if is_japan:
+        # If it's Japan, we usually want to track it regardless of remote status
         return "Japan", is_remote, True, "japan"
 
     if is_remote:
+        # Check for global terms (e.g., "worldwide")
         if any(term in loc for term in GLOBAL_REMOTE_TERMS):
             remote_scope = "global"
-        elif "apac" in loc:
+        # Check for APAC/Asia
+        elif "apac" in loc or "asia" in loc:
             remote_scope = "apac"
-        elif "asia" in loc:
-            remote_scope = "apac"
+        # Check for specific restricted regions
         elif any(term in loc for term in RESTRICTED_REGION_KEYWORDS):
             remote_scope = "restricted"
         else:
+            # Default remote scope if none of the above match
             remote_scope = "global"
     else:
+        # If not remote and not Japan, it's a specific local office elsewhere
         remote_scope = "restricted"
 
     return None, is_remote, False, remote_scope
