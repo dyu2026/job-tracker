@@ -1769,6 +1769,7 @@ SCRAPER_TASKS: list[tuple] = [
     (scrape_wayve,),
     (scrape_waymo,),
     (scrape_monday,),
+    (scrape_greenhouse, "canonical", "Canonical"),
     (scrape_greenhouse, "nansen", "Nansen"),
     (scrape_greenhouse, "brave", "Brave"),
     (scrape_greenhouse, "gitlab", "GitLab"),
