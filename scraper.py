@@ -1,7 +1,6 @@
 """
 Job scrapers → Supabase (jobs + linkedin_posts).
 
-Drop-in companion to scraper.py: same external setup (utils, supabase_client, .env).
 Run: python scraper.py
 """
 
@@ -12,7 +11,10 @@ import platform
 import random
 import re
 import time
+import threading
+import queue
 import urllib.parse
+from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime, timedelta, timezone
 from urllib.parse import urlparse
@@ -20,13 +22,13 @@ from urllib.parse import urlparse
 import feedparser
 import requests
 from bs4 import BeautifulSoup
+from playwright.sync_api import sync_playwright
 
 from supabase_client import supabase
 from utils import classify_job, classify_location
-from playwright.sync_api import sync_playwright
 
 # ---------------------------------------------------------------------------
-# Constants
+# Constants & Globals
 # ---------------------------------------------------------------------------
 
 REQUEST_TIMEOUT_S = 20
@@ -45,6 +47,9 @@ LINKEDIN_EXC_KEYWORDS = [
     "excited to announce", "i'm happy to share", "started a new position",
     "looking for a new role", "i am looking", "please help me find", "I'm joining",
 ]
+
+# The central queue for all DB operations
+db_queue = queue.Queue(maxsize=5000)
 
 # ---------------------------------------------------------------------------
 # Logging helpers
@@ -122,59 +127,164 @@ def safe_request(method: str, url: str, **kwargs) -> requests.Response | None:
         time.sleep(2 * (attempt + 1))
 
     return None
+    
+def safe_supabase_call(fn, retries=3):
+    
+    last_exception = None
+    for i in range(retries):
+        try:
+            return fn()
+        except Exception as e:
+            last_exception = e
+            print(f"[Supabase retry {i+1}] {e}")
+            time.sleep(2 * (i + 1))
+    raise last_exception
 
 
 # ---------------------------------------------------------------------------
-# Supabase helpers
+# Producer helpers
 # ---------------------------------------------------------------------------
 
 
-def upsert_job(job_data: dict) -> None:
+def upsert_jobs(company: str, jobs: list[dict]) -> None:
     now = datetime.now(UTC).isoformat()
+    for job in jobs:
+        job["_scraped_at"] = now
 
-    existing = (
-        supabase.table("jobs")
-        .select("first_seen_at")
-        .eq("company", job_data["company"])
-        .eq("external_id", job_data["external_id"])
-        .execute()
-    )
-
-    first_seen = existing.data[0]["first_seen_at"] if existing.data else now
-
-    job_data["first_seen_at"] = first_seen
-    job_data["last_seen_at"] = now
-    job_data["is_active"] = True
-
-    supabase.table("jobs").upsert(job_data, on_conflict="company,external_id").execute()
-
+    db_queue.put(("JOB_BATCH", (company, jobs)))
 
 def mark_removed_jobs(company_name: str, seen_ids: set) -> None:
-    if not seen_ids:
-        print(f"[{company_name}] Removal detection: skipped (no job IDs collected this run)")
-        return
+    """Queues a cleanup signal for a specific company."""
+    db_queue.put(("FLUSH_COMPANY", (company_name, seen_ids)))
 
-    response = (
-        supabase.table("jobs")
-        .select("external_id")
-        .eq("company", company_name)
-        .eq("is_active", True)
-        .execute()
-    )
+# ---------------------------------------------------------------------------
+# The Single Writer (Consumer)
+# ---------------------------------------------------------------------------
 
-    existing_ids = {row["external_id"] for row in response.data}
-    removed_ids = existing_ids - seen_ids
+def db_writer_worker():
+    pending_jobs = defaultdict(list)
+    print("[Writer] Thread started.")
 
-    if removed_ids:
-        print(
-            f"[{company_name}] Removal detection: marking {len(removed_ids)} "
-            f"listing(s) inactive (no longer on board)"
+    def flush_company(company):
+        raw_batch = pending_jobs.pop(company, [])
+
+        if not raw_batch:
+            return
+
+        unique_map = {j["external_id"]: j for j in raw_batch}
+        batch = list(unique_map.values())
+
+        ext_ids = [j["external_id"] for j in batch]
+        if not ext_ids:
+            return
+
+        existing = safe_supabase_call(
+            lambda: supabase.table("jobs")
+            .select("external_id, first_seen_at")
+            .eq("company", company)
+            .in_("external_id", ext_ids)
+            .execute()
         )
-        supabase.table("jobs").update({"is_active": False}).in_(
-            "external_id", list(removed_ids)
-        ).eq("company", company_name).execute()
-    else:
-        print(f"[{company_name}] Removal detection: no change (all active DB IDs still on board)")
+
+        rows = existing.data or []
+        first_seen_map = {r["external_id"]: r["first_seen_at"] for r in rows}
+
+        for job in batch:
+            scraped_at = job.pop("_scraped_at", datetime.now(UTC).isoformat())
+            job["first_seen_at"] = first_seen_map.get(job["external_id"], scraped_at)
+            job["last_seen_at"] = scraped_at
+            job["is_active"] = True
+
+        safe_supabase_call(
+            lambda: supabase.table("jobs")
+            .upsert(batch, on_conflict="company,external_id")
+            .execute()
+        )
+
+        print(f"[{company}] Writer: Bulk upserted {len(batch)} jobs.")
+
+    while True:
+        try:
+            msg = db_queue.get()
+
+            if msg is None:
+                for company in list(pending_jobs.keys()):
+                    flush_company(company)
+                break
+
+            action, payload = msg
+
+            if action == "JOB_BATCH":
+                company, jobs = payload
+                pending_jobs[company].extend(jobs)
+
+                if len(pending_jobs[company]) >= 100:
+                    flush_company(company)
+
+            elif action == "FLUSH_COMPANY":
+                company, seen_ids = payload
+
+                flush_company(company)
+
+                result = safe_supabase_call(
+                    lambda: supabase.table("jobs")
+                    .select("external_id")
+                    .eq("company", company)
+                    .eq("is_active", True)
+                    .execute()
+                )
+
+                rows = result.data or []
+                existing_ids = set(r["external_id"] for r in rows)
+                removed_ids = existing_ids - seen_ids
+
+                if removed_ids:
+                    safe_supabase_call(
+                        lambda: supabase.table("jobs")
+                        .update({"is_active": False})
+                        .in_("external_id", list(removed_ids))
+                        .eq("company", company)
+                        .execute()
+                    )
+
+                    print(f"[{company}] Writer: Marked {len(removed_ids)} jobs inactive.")
+
+            elif action == "LINKEDIN_CLEANUP":
+                safe_supabase_call(
+                    lambda: supabase.table("linkedin_posts")
+                    .delete()
+                    .lt("published_at", payload)
+                    .execute()
+                )
+
+            elif action == "LINKEDIN_UPSERT_BATCH":
+                if payload:
+                    unique_posts = {p["url"]: p for p in payload}
+                    batch = list(unique_posts.values())
+
+                    safe_supabase_call(
+                        lambda: supabase.table("linkedin_posts")
+                        .upsert(batch, on_conflict="url")
+                        .execute()
+                    )
+
+                    print(f"[LinkedIn] Writer: Bulk upserted {len(batch)} posts.")
+
+            # logging
+            if random.random() < 0.01:
+                try:
+                    size = db_queue.qsize()
+                except NotImplementedError:
+                    size = "N/A"
+                print(f"[Writer] Queue size: {size}")
+
+        except Exception as e:
+            print(f"[Writer] ERROR: {e}")
+
+        finally:
+            db_queue.task_done()
+
+    print("[Writer] Thread stopping.")
 
 
 # ---------------------------------------------------------------------------
@@ -317,6 +427,8 @@ def scrape_nextjs_company(
     seen_ids: set[str] = set()
     relevant = 0
 
+    batch = []
+
     for job in jobs:
         title = job.get("title") or job.get("text") or job.get("name")
         external_id = job.get("id") or job.get("jobId") or job.get("requisition_id")
@@ -350,12 +462,15 @@ def scrape_nextjs_company(
         seen_ids.add(external_id)
         relevant += 1
 
-        upsert_job(
+        batch.append(
             job_row(
                 company_name, external_id, title, location_name, job_url,
                 seniority, role, region, is_remote, is_japan, remote_scope, is_valid,
             )
         )
+        
+    if batch:
+        upsert_jobs(company_name, batch)
 
     log_summary(company_name, raw_total, relevant)
     mark_removed_jobs(company_name, seen_ids)
@@ -391,6 +506,8 @@ def scrape_greenhouse(company_slug: str, company_name: str) -> None:
     seen_ids: set[str] = set()
     relevant = 0
 
+    batch = []
+
     for job in jobs:
         location_name = job["location"].get("name", "") if isinstance(job.get("location"), dict) else ""
 
@@ -404,12 +521,14 @@ def scrape_greenhouse(company_slug: str, company_name: str) -> None:
         seen_ids.add(external_id)
         relevant += 1
 
-        upsert_job(
+        batch.append(
             job_row(
                 company_name, external_id, job["title"], location_name, job["absolute_url"],
                 seniority, role, region, is_remote, is_japan, remote_scope, is_valid,
             )
         )
+    if batch:
+        upsert_jobs(company_name, batch)
 
     log_summary(company_name, raw_total, relevant)
     mark_removed_jobs(company_name, seen_ids)
@@ -468,6 +587,8 @@ def scrape_ashby(company_slug: str, company_name: str) -> None:
     seen_ids: set[str] = set()
     relevant = 0
 
+    batch = []
+
     for job in jobs:
         title = job.get("title")
         external_id = str(job["id"])
@@ -496,12 +617,14 @@ def scrape_ashby(company_slug: str, company_name: str) -> None:
         seen_ids.add(external_id)
         relevant += 1
 
-        upsert_job(
+        batch.append(
             job_row(
                 company_name, external_id, title, location_name, apply_url,
                 seniority, role, region, is_remote, is_japan, remote_scope, is_valid,
             )
         )
+    if batch:
+        upsert_jobs(company_name, batch)
 
     log_summary(company_name, raw_total, relevant)
     mark_removed_jobs(company_name, seen_ids)
@@ -542,6 +665,8 @@ def scrape_smartrecruiters(company_slug: str, company_name: str) -> None:
     seen_ids: set[str] = set()
     relevant = 0
 
+    batch = []
+
     for job in all_jobs:
         title = job.get("name", "")
         loc = job.get("location") or {}
@@ -559,13 +684,15 @@ def scrape_smartrecruiters(company_slug: str, company_name: str) -> None:
         seen_ids.add(external_id)
         relevant += 1
 
-        upsert_job(
+        batch.append(
             job_row(
                 company_name, external_id, title, location_name,
                 f"https://jobs.smartrecruiters.com/{company_slug.capitalize()}/{external_id}",
                 seniority, role, region, is_remote, is_japan, remote_scope, is_valid,
             )
         )
+    if batch:
+        upsert_jobs(company_name, batch)
 
     log_summary(company_name, raw_total, relevant)
     mark_removed_jobs(company_name, seen_ids)
@@ -723,6 +850,8 @@ def scrape_workday(
         # 🔥 LIMIT detail calls per page (critical)
         detail_budget = 5
 
+        batch = []
+
         for job in jobs:
             title = job.get("title")
             externalpath = job.get("externalPath")
@@ -790,7 +919,7 @@ def scrape_workday(
             filteredcount += 1
             totaljobs += 1
 
-            upsert_job(
+            batch.append(
                 job_row(
                     company_name,
                     str(externalpath),
@@ -806,6 +935,8 @@ def scrape_workday(
                     is_valid,
                )
             )
+        if batch:
+            upsert_jobs(company_name, batch)
 
         log_page(
             company_name,
@@ -861,6 +992,8 @@ def scrape_lever(company_slug: str, company_name: str) -> None:
     seen_ids: set[str] = set()
     relevant = 0
 
+    batch = []
+
     for job in jobs:
         title = job.get("text", "")
         external_id = job.get("id")
@@ -881,12 +1014,14 @@ def scrape_lever(company_slug: str, company_name: str) -> None:
         seen_ids.add(external_id)
         relevant += 1
 
-        upsert_job(
+        batch.append(
             job_row(
                 company_name, external_id, title, location_name, job.get("hostedUrl"),
                 seniority, role, region, is_remote, is_japan, remote_scope, is_valid,
             )
         )
+    if batch:
+        upsert_jobs(company_name, batch)
 
     log_summary(company_name, raw_total, relevant)
     mark_removed_jobs(company_name, seen_ids)
@@ -927,6 +1062,8 @@ def scrape_monday(company_name: str = "monday.com") -> None:
     seen_ids: set[str] = set()
     relevant = 0
 
+    batch = []
+
     for job in positions:
         title = job.get("name")
         external_id = job.get("uid")
@@ -946,12 +1083,14 @@ def scrape_monday(company_name: str = "monday.com") -> None:
         seen_ids.add(external_id)
         relevant += 1
 
-        upsert_job(
+        batch.append(
             job_row(
                 company_name, external_id, title, location_name, job_url,
                 seniority, role, region, is_remote, is_japan, remote_scope, is_valid,
             )
         )
+    if batch:
+        upsert_jobs(company_name, batch)
 
     log_summary(company_name, raw_total, relevant)
     mark_removed_jobs(company_name, seen_ids)
@@ -1003,6 +1142,8 @@ def scrape_eightfold(company_slug: str, company_name: str, location: str, pid: s
         raw_listings_total += len(jobs)
         page_relevant = 0
 
+        batch = []
+
         for job in jobs:
             title = job.get("name")
             location_name = job.get("location")
@@ -1020,7 +1161,7 @@ def scrape_eightfold(company_slug: str, company_name: str, location: str, pid: s
             if not is_valid:
                 continue
 
-            upsert_job(
+            batch.append(
                 job_row(
                     company_name, external_id, title, location_name, job_url,
                     seniority, role, region, is_remote, is_japan, remote_scope, is_valid,
@@ -1028,6 +1169,8 @@ def scrape_eightfold(company_slug: str, company_name: str, location: str, pid: s
             )
             total_jobs += 1
             page_relevant += 1
+        if batch:
+            upsert_jobs(company_name, batch)
 
         log_page(company_name, start=start, raw_in_page=len(jobs), relevant_in_page=page_relevant)
 
@@ -1074,6 +1217,8 @@ def scrape_bamboohr(subdomain: str, company_name: str) -> None:
     seen_ids: set[str] = set()
     relevant = 0
 
+    batch = []
+
     for job in jobs:
         title = (
             job.get("jobTitle")
@@ -1109,12 +1254,14 @@ def scrape_bamboohr(subdomain: str, company_name: str) -> None:
         seen_ids.add(external_id)
         relevant += 1
 
-        upsert_job(
+        batch.append(
             job_row(
                 company_name, external_id, title, location_name, job_url,
                 seniority, role, region, is_remote, is_japan, remote_scope, is_valid,
             )
         )
+    if batch:
+        upsert_jobs(company_name, batch)
 
     log_summary(company_name, raw_total, relevant)
     mark_removed_jobs(company_name, seen_ids)
@@ -1165,7 +1312,9 @@ def scrape_netflix() -> None:
 
         raw_listings_total += len(jobs)
         page_stored = 0
-
+    
+        batch = []
+        
         for job in jobs:
             job_id = job.get("id")
             title = job.get("name")
@@ -1188,13 +1337,15 @@ def scrape_netflix() -> None:
                 f"?domain=netflix.com&pid={external_id}"
             )
 
-            upsert_job(
+            batch.append(
                 job_row(
                     company_name, external_id, title, location_name, job_url,
                     seniority, role, region, is_remote, is_japan, remote_scope, is_valid,
                 )
             )
             page_stored += 1
+        if batch:
+            upsert_jobs(company_name, batch)
 
         log_page(company_name, start=start, raw_in_page=len(jobs), relevant_in_page=page_stored)
         relevant_total += page_stored
@@ -1298,6 +1449,8 @@ def scrape_uber(company_name: str = "Uber") -> None:
         raw_total += len(results)
         page_relevant = 0
 
+        batch = []
+
         for job in results:
             external_id = str(job.get("id"))
             title = job.get("title")
@@ -1326,7 +1479,7 @@ def scrape_uber(company_name: str = "Uber") -> None:
             seen_ids.add(external_id)
             page_relevant += 1
 
-            upsert_job(
+            batch.append(
                 job_row(
                     company_name,
                     external_id,
@@ -1342,6 +1495,8 @@ def scrape_uber(company_name: str = "Uber") -> None:
                     is_valid,
                 )
             )
+        if batch:
+            upsert_jobs(company_name, batch)
 
         log_page(
             company_name,
@@ -1454,6 +1609,8 @@ def scrape_meta(company_name: str = "Meta") -> None:
             print(f"[Meta DEBUG] Found {len(jobs)} jobs")
 
             raw_total += len(jobs)
+            
+            batch = []
 
             for job in jobs:
                 title = job.get("title")
@@ -1480,7 +1637,7 @@ def scrape_meta(company_name: str = "Meta") -> None:
 
                 relevant += 1
 
-                upsert_job(
+                batch.append(
                     job_row(
                         company_name,
                         external_id,
@@ -1496,6 +1653,8 @@ def scrape_meta(company_name: str = "Meta") -> None:
                         is_valid,
                     )
                 )
+            if batch:
+                upsert_jobs(company_name, batch)
 
         page.on("response", handle_response)
 
@@ -1579,6 +1738,9 @@ def scrape_wayve(company_name: str = "Wayve") -> None:
         return text.strip(), UNKNOWN_LOCATION
 
     # --- main loop ---
+    
+    batch = []
+    
     for a in links:
         href = a.get("href")
 
@@ -1617,7 +1779,7 @@ def scrape_wayve(company_name: str = "Wayve") -> None:
         seen_ids.add(external_id)
         relevant += 1
 
-        upsert_job(
+        batch.append(
             job_row(
                 company_name,
                 external_id,
@@ -1633,6 +1795,8 @@ def scrape_wayve(company_name: str = "Wayve") -> None:
                 is_valid,
             )
         )
+    if batch:
+        upsert_jobs(company_name, batch)
 
     log_summary(company_name, raw_total, relevant)
     mark_removed_jobs(company_name, seen_ids)
@@ -1677,6 +1841,8 @@ def scrape_waymo(company_name: str = "Waymo") -> None:
 
     log_page(company_name, offset=0, raw_in_page=raw_total, extra="HTML parse")
 
+    batch = []
+
     for job in jobs:
         try:
             a = job.select_one("h3 a")
@@ -1707,7 +1873,7 @@ def scrape_waymo(company_name: str = "Waymo") -> None:
             seen_ids.add(external_id)
             relevant += 1
 
-            upsert_job(
+            batch.append(
                 job_row(
                     company_name,
                     external_id,
@@ -1723,9 +1889,11 @@ def scrape_waymo(company_name: str = "Waymo") -> None:
                     is_valid,
                 )
             )
-
         except Exception as e:
             log_error(company_name, f"parse error: {e}")
+            
+    if batch:
+        upsert_jobs(company_name, batch)
 
     log_summary(company_name, raw_total, relevant)
     mark_removed_jobs(company_name, seen_ids)
@@ -1755,46 +1923,37 @@ def scrape_linkedin() -> None:
         f'OR "求人" OR newopportunity) Japan when:{days_to_pull}d'
     )
     encoded_query = urllib.parse.quote(query)
-    rss_url = (
-        f"https://news.google.com/rss/search?q={encoded_query}"
-        f"&hl=en-JP&gl=JP&ceid=JP:en"
-    )
+    rss_url = f"https://news.google.com/rss/search?q={encoded_query}&hl=en-JP&gl=JP&ceid=JP:en"
 
     feed = feedparser.parse(rss_url)
     cutoff = datetime.now(timezone.utc) - timedelta(days=days_to_pull)
 
-    print(f"LinkedIn feed entries: {len(feed.entries)}")
+    db_queue.put(("LINKEDIN_CLEANUP", cutoff.isoformat()))
 
-    supabase.table("linkedin_posts").delete().lt("published_at", cutoff.isoformat()).execute()
-
+    # Use a dictionary to deduplicate URLs before they even hit the queue
+    unique_posts = {}
     for entry in feed.entries:
         if not hasattr(entry, "published_parsed") or entry.published_parsed is None:
             continue
-
         published_utc = datetime(*entry.published_parsed[:6], tzinfo=timezone.utc)
-        if published_utc < cutoff:
-            continue
+        if published_utc < cutoff: continue
 
         title = entry.title
         summary = entry.get("summary", "")
-
-        if not linkedin_matches_filters(title + " " + summary):
-            continue
+        if not linkedin_matches_filters(title + " " + summary): continue
 
         url = extract_linkedin_url(summary) or entry.link
-        snippet = re.sub("<.*?>", "", summary)
+        if not url: continue
 
-        supabase.table("linkedin_posts").upsert(
-            {
-                "title": title,
-                "url": url,
-                "snippet": snippet,
-                "published_at": published_utc.isoformat(),
-            },
-            on_conflict="url",
-        ).execute()
+        unique_posts[url] = {
+            "title": title,
+            "url": url,
+            "snippet": re.sub("<.*?>", "", summary),
+            "published_at": published_utc.isoformat(),
+        }
 
-    print("LinkedIn RSS scrape complete")
+    db_queue.put(("LINKEDIN_UPSERT_BATCH", list(unique_posts.values())))
+    print(f"LinkedIn RSS: {len(unique_posts)} unique posts queued.")
 
 
 # ---------------------------------------------------------------------------
@@ -1944,20 +2103,25 @@ SCRAPER_TASKS: list[tuple] = [
 
 def main() -> None:
     start_time = time.time()
-
     system = platform.system()
     max_workers = 1 if system == "Windows" else 3
-    print(f"Detected OS: {system} | Using {max_workers} worker(s)")
+    print(f"Detected OS: {system} | Using {max_workers} scraper worker(s)")
+
+    writer_thread = threading.Thread(target=db_writer_worker, daemon=True)
+    writer_thread.start()
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = [executor.submit(run_task, *task) for task in SCRAPER_TASKS]
         for future in as_completed(futures):
             future.result()
 
-    runtime = round(time.time() - start_time, 2)
-    print("\n✅ All scrapers completed")
-    print(f"⏱ Total runtime: {runtime} seconds")
+    print("\nScraping done. Finalizing DB operations...")
+    db_queue.put(None)
+    db_queue.join() 
+    writer_thread.join()
 
+    runtime = round(time.time() - start_time, 2)
+    print(f"\n✅ All tasks completed in {runtime} seconds")
 
 if __name__ == "__main__":
     main()
