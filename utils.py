@@ -38,7 +38,7 @@ RESTRICTED_REGION_KEYWORDS = (
     "belgium", "denmark", "lithuania", "lisbon", "hungary",
     "czech republic", "prague", "barcelona", "luxembourg",
     "berlin", "amsterdam", "stockholm", "milan", "romania",
-    "switzerland", "poland", "portugal",
+    "switzerland", "poland", "portugal", "budapest",
     "united arab emirates", "uae", "saudi arabia",
     "singapore", "australia", "sydney", "new zealand",
     "bangkok", "thailand", "vietnam", "kuala lumpur",
