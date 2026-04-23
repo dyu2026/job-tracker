@@ -944,16 +944,19 @@ def scrape_workday(
         if not jobs:
             if curoffset == 0:
                 log_error(company_name, "no jobs found on first page")
-                return False  # ❌ true failure
+                return True  # ✅ NOT a failure
             else:
                 log_stop(company_name, f"end of pagination at offset={curoffset}")
-                break  # ✅ normal completion
+                break
 
         # 🔥 EARLY PAGE SKIP (big win)
-        if all(
-            "japan" not in (job.get("locationsText") or "").lower()
+        keywords = ["japan", "tokyo", "osaka", "remote"]
+        has_any_potential = any(
+            any(k in (job.get("locationsText") or "").lower() for k in keywords)
             for job in jobs
-        ):
+        )
+
+        if not has_any_potential and location_ids is not None:
             no_relevant_pages += 1
             payload["offset"] += pagesize
             continue
@@ -1096,6 +1099,9 @@ def scrape_workday(
             break
 
         payload["offset"] += pagesize
+    
+    if totaljobs == 0:
+        print(f"[{company_name}] ⚠️ No relevant jobs after filtering (raw={rawlistingstotal})")
     
     log_summary(company_name, rawlistingstotal, totaljobs)
 
@@ -2257,15 +2263,15 @@ SCRAPER_TASKS: list[tuple] = [
         scrape_workday,
         "warnerbros|global|wd5",
         "Warner Bros",
-        "8b705da2becf43cfaccc091da0988ab2",
-        "locationCountry",
+        None,
+        None,
     ),
     (
         scrape_workday,
-        "zoom|zoom",
+        "zoom|Zoom|wd5",
         "Zoom",
-        "8b705da2becf43cfaccc091da0988ab2",
-        "locationCountry",
+        None,
+        None,
     ),
     (
         scrape_workday,
