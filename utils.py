@@ -43,8 +43,8 @@ RESTRICTED_REGION_KEYWORDS = (
     "switzerland", "poland", "portugal", "budapest",
     "united arab emirates", "uae", "saudi arabia", "sau", "dubai",
     "singapore", "australia", "sydney", "new zealand",
-    "bangkok", "thailand", "vietnam", "kuala lumpur", "th"
-    "south korea", "india", "bangalore", "ind",
+    "bangkok", "thailand", "vietnam", "kuala lumpur", "th",
+    "south korea", "india", "bangalore", "ind", "korea", "kr-south",
     "sea", "philippines", "az",
     "beijing", "china",
     "south africa", "israel", "serbia",
