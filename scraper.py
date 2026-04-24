@@ -423,7 +423,8 @@ def scrape_nextjs_company(company_name: str, careers_url: str) -> bool:
     script_tag = soup.find("script", {"id": "__NEXT_DATA__"})
 
     if not script_tag:
-        log_error(company_name, "no __NEXT_DATA__ script")
+        # If the tag is missing, the layout has changed—this is a real error.
+        log_error(company_name, "no __NEXT_DATA__ script (layout changed)")
         return False
 
     try:
@@ -432,9 +433,12 @@ def scrape_nextjs_company(company_name: str, careers_url: str) -> bool:
         log_error(company_name, f"JSON parse error: {e}")
         return False
 
+    # Attempt to find the job list within the JSON
     jobs = _find_job_list_in_json(data)
-    if not jobs:
-        log_error(company_name, "no job list found in __NEXT_DATA__")
+    
+    # If the structure exists but has 0 jobs, we treat it as a valid scrape with 0 results.
+    if jobs is None:
+        log_error(company_name, "could not find job list structure in JSON")
         return False
 
     raw_total = len(jobs)
@@ -446,41 +450,30 @@ def scrape_nextjs_company(company_name: str, careers_url: str) -> bool:
 
     for job in jobs:
         title = job.get("title") or job.get("text") or job.get("name")
-        external_id = job.get("id") or job.get("jobId") or job.get("requisition_id") or job.get("uid")
+        external_id = job.get("id") or job.get("jobId") or job.get("uid")
 
         if not title or not external_id:
             continue
 
-        # Location Normalization
+        # Location extraction logic...
         if "locations" in job and isinstance(job["locations"], list):
             location_parts = [loc.get("name", "") for loc in job["locations"] if loc.get("name")]
             location_name = " | ".join(location_parts)
         else:
             loc = job.get("location")
-            location_name = loc.get("name", "") if isinstance(loc, dict) else (loc if isinstance(loc, str) else "Tokyo, Japan")
+            location_name = loc.get("name", "") if isinstance(loc, dict) else (loc if isinstance(loc, str) else "Unknown")
 
-        # 🔥 CUSTOM URL BUILDER
-        # Logic to handle different URL patterns for Miro, Revolut, and Monday
+        # Custom URL Builder
         if "revolut" in company_name.lower():
-            slug = slugify(title)
-            job_url = f"https://www.revolut.com/en-JP/careers/position/{slug}-{external_id}/"
+            job_url = f"https://www.revolut.com/en-JP/careers/position/{slugify(title)}-{external_id}/"
         elif "miro" in company_name.lower():
             job_url = f"https://miro.com/careers/vacancy/{external_id}/"
         elif "monday" in company_name.lower():
-            # Monday.com uses /careers/positions/ID
-            job_url = f"https://monday.com/careers/positions/{external_id}"
+            job_url = f"https://monday.com/careers/{external_id}"
         else:
-            # Fallback to existing logic
-            job_url = (
-                job.get("url")
-                or job.get("applyUrl")
-                or job.get("absolute_url")
-                or f"{careers_url.rstrip('/')}/{external_id}"
-            )
+            job_url = job.get("url") or f"{careers_url.rstrip('/')}/{external_id}"
 
         seniority, role = classify_job(title)
-        
-        # ✅ Updated to 3 arguments for production validator
         region, is_remote, is_japan, remote_scope, is_valid = (
             enrich_and_validate_location(location_name, company_name, job_url)
         )
@@ -488,29 +481,19 @@ def scrape_nextjs_company(company_name: str, careers_url: str) -> bool:
         if not is_valid:
             continue
 
-        external_id = str(external_id)
-        seen_ids.add(external_id)
+        seen_ids.add(str(external_id))
         relevant += 1
-
-        batch.append(
-            job_row(
-                company_name, external_id, title, location_name, job_url,
-                seniority, role, region, is_remote, is_japan, remote_scope, is_valid,
-            )
-        )
+        batch.append(job_row(company_name, str(external_id), title, location_name, job_url,
+                             seniority, role, region, is_remote, is_japan, remote_scope, is_valid))
 
     if batch:
         upsert_jobs(company_name, batch)
 
     log_summary(company_name, raw_total, relevant)
-    
-    # Handle empty Japan results without failing the scraper
-    if raw_total == 0:
-        log_error(company_name, "No jobs found in Next.js data")
-        return False
-        
+
     mark_removed_jobs(company_name, seen_ids)
     log_success(company_name)
+
     return True
 
 # --- Wrappers to call scrape_nextjs_company ---
