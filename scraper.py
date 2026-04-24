@@ -16,8 +16,9 @@ import requests
 import threading
 import time
 import traceback
-import queue
+import unicodedata
 import urllib.parse
+import queue
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime, timedelta, timezone
@@ -381,6 +382,11 @@ def enrich_and_validate_location(location_name: str, company: str = "", job_id: 
 # Next.js / __NEXT_DATA__
 # ---------------------------------------------------------------------------
 
+def slugify(text: str) -> str:
+    """Converts title to URL-friendly slug for Revolut."""
+    text = unicodedata.normalize('NFKD', text).encode('ascii', 'ignore').decode('ascii')
+    text = re.sub(r'[^\w\s-]', '', text).lower().strip()
+    return re.sub(r'[-\s]+', '-', text)
 
 def _find_job_list_in_json(obj):
     if isinstance(obj, dict):
@@ -409,24 +415,15 @@ def scrape_nextjs_company(company_name: str, careers_url: str) -> bool:
     log_start(company_name, "Next.js unified")
 
     res = safe_request("GET", careers_url)
-    print(f"[DEBUG] Response object: {res}")
-
-    if res:
-        print(f"[DEBUG] Final status: {res.status_code}")
-        print(f"[DEBUG] Final length: {len(res.text)}")
-
     if not res:
         log_error(company_name, "failed to fetch careers page")
         return False
 
     soup = BeautifulSoup(res.text, "html.parser")
-
-    print("[DEBUG] Searching for __NEXT_DATA__ script tag...")
     script_tag = soup.find("script", {"id": "__NEXT_DATA__"})
 
     if not script_tag:
         log_error(company_name, "no __NEXT_DATA__ script")
-        print("[DEBUG] __NEXT_DATA__ NOT FOUND in final HTML")
         return False
 
     try:
@@ -437,7 +434,7 @@ def scrape_nextjs_company(company_name: str, careers_url: str) -> bool:
 
     jobs = _find_job_list_in_json(data)
     if not jobs:
-        log_error(company_name, "no job list found in __NEXT_DATA__ (structure may have changed)")
+        log_error(company_name, "no job list found in __NEXT_DATA__")
         return False
 
     raw_total = len(jobs)
@@ -454,30 +451,39 @@ def scrape_nextjs_company(company_name: str, careers_url: str) -> bool:
         if not title or not external_id:
             continue
 
-        # Normalize location
+        # Location Normalization
         if "locations" in job and isinstance(job["locations"], list):
-            location_parts = [
-                loc.get("name", "") for loc in job["locations"] if loc.get("name")
-            ]
+            location_parts = [loc.get("name", "") for loc in job["locations"] if loc.get("name")]
             location_name = " | ".join(location_parts)
         else:
             loc = job.get("location")
-            if isinstance(loc, dict):
-                location_name = loc.get("name", "")
-            elif isinstance(loc, str):
-                location_name = loc
-            else:
-                location_name = UNKNOWN_LOCATION
+            location_name = loc.get("name", "") if isinstance(loc, dict) else (loc if isinstance(loc, str) else "Tokyo, Japan")
 
-        job_url = (
-            job.get("url")
-            or job.get("applyUrl")
-            or job.get("absolute_url")
-            or f"{careers_url.rstrip('/')}/{external_id}"
-        )
+        # 🔥 CUSTOM URL BUILDER
+        # Logic to handle different URL patterns for Miro, Revolut, and Monday
+        if "revolut" in company_name.lower():
+            slug = slugify(title)
+            job_url = f"https://www.revolut.com/en-JP/careers/position/{slug}-{external_id}/"
+        elif "miro" in company_name.lower():
+            job_url = f"https://miro.com/careers/vacancy/{external_id}/"
+        elif "monday" in company_name.lower():
+            # Monday.com uses /careers/positions/ID
+            job_url = f"https://monday.com/careers/positions/{external_id}"
+        else:
+            # Fallback to existing logic
+            job_url = (
+                job.get("url")
+                or job.get("applyUrl")
+                or job.get("absolute_url")
+                or f"{careers_url.rstrip('/')}/{external_id}"
+            )
 
         seniority, role = classify_job(title)
-        region, is_remote, is_japan, remote_scope, is_valid = enrich_and_validate_location(location_name)
+        
+        # ✅ Updated to 3 arguments for production validator
+        region, is_remote, is_japan, remote_scope, is_valid = (
+            enrich_and_validate_location(location_name, company_name, job_url)
+        )
 
         if not is_valid:
             continue
@@ -497,9 +503,14 @@ def scrape_nextjs_company(company_name: str, careers_url: str) -> bool:
         upsert_jobs(company_name, batch)
 
     log_summary(company_name, raw_total, relevant)
+    
+    # Handle empty Japan results without failing the scraper
+    if raw_total == 0:
+        log_error(company_name, "No jobs found in Next.js data")
+        return False
+        
     mark_removed_jobs(company_name, seen_ids)
     log_success(company_name)
-
     return True
 
 # --- Wrappers to call scrape_nextjs_company ---
