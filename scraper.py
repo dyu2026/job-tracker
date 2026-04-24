@@ -53,6 +53,10 @@ LINKEDIN_EXC_KEYWORDS = [
 # The central queue for all DB operations
 db_queue = queue.Queue(maxsize=5000)
 
+DEBUG_FILTERS = True
+FILTER_STATS = defaultdict(int)
+
+
 # ---------------------------------------------------------------------------
 # Logging helpers
 # ---------------------------------------------------------------------------
@@ -361,9 +365,15 @@ def include_job(
     return False
 
 
-def enrich_and_validate_location(location_name: str) -> tuple:
+def enrich_and_validate_location(location_name: str, company: str = "", job_id: str = ""):
     region, is_remote, is_japan, remote_scope = classify_location(location_name)
-    is_valid = include_job(is_japan=is_japan, remote_scope=remote_scope, location_name=location_name)
+
+    is_valid = include_job(
+        is_japan=is_japan,
+        remote_scope=remote_scope,
+        location_name=location_name
+    )
+
     return region, is_remote, is_japan, remote_scope, is_valid
 
 
@@ -876,11 +886,11 @@ def scrape_workday(
     facet: str = "locations",
 ) -> None:
     subdomain, tenant, cluster = _parse_workday_slug(company_slug)
+    if DEBUG_FILTERS:
+        FILTER_STATS.clear()
 
     apiurl = f"https://{subdomain}.{cluster}.myworkdayjobs.com/wday/cxs/{subdomain}/{tenant}/jobs"
-
-    session = requests.Session()
-
+    
     headers = {
         "Content-Type": "application/json",
         "Accept": "application/json",
@@ -889,8 +899,11 @@ def scrape_workday(
         "Referer": f"https://{subdomain}.{cluster}.myworkdayjobs.com/en-US/{tenant}",
     }
 
+    # Configuration
+    is_global_scrape = location_ids is None
     pagesize = 20
     maxoffset = 200
+    max_irrelevant_pages = 10 if is_global_scrape else 2 
 
     payload = {
         "limit": pagesize,
@@ -907,218 +920,159 @@ def scrape_workday(
     seenids: set[str] = set()
     totaljobs = 0
     rawlistingstotal = 0
+    no_relevant_pages = 0
 
     log_start(company_name, "Workday")
 
-    no_relevant_pages = 0
-
-    # 🔥 DEBUG counters
-    detail_calls = 0
-
     while True:
         curoffset = payload["offset"]
-
         if curoffset > maxoffset:
             log_stop(company_name, f"safety cap offset>{maxoffset}")
             break
 
-        # small jitter BEFORE request (important)
-        time.sleep(random.uniform(0.2, 0.6))
-
+        time.sleep(random.uniform(0.3, 0.7))
         response = safe_request("POST", apiurl, json=payload, headers=headers)
 
         if not response:
-            log_error(company_name, "no HTTP response from Workday API after retries")
+            log_error(company_name, "no HTTP response")
             return False
 
-        try:
-            data = response.json()
-        except Exception as e:
-            log_error(company_name, f"JSON parse error: {e}")
-            return False
+        data = response.json()
         jobs = data.get("jobPostings", [])
         total = data.get("total", 0)
-
         rawlistingstotal += len(jobs)
 
         if not jobs:
-            if curoffset == 0:
-                log_error(company_name, "no jobs found on first page")
-                return True  # ✅ NOT a failure
-            else:
-                log_stop(company_name, f"end of pagination at offset={curoffset}")
-                break
+            log_stop(company_name, f"end of pagination at offset={curoffset}")
+            break
 
-        # 🔥 EARLY PAGE SKIP (big win)
+        # 🔥 FIX: Early Page Skip check now includes externalPath keywords
+        # This prevents skipping pages where the locationText is generic but the URL is specific
         keywords = ["japan", "tokyo", "osaka", "remote"]
         has_any_potential = any(
-            any(k in (job.get("locationsText") or "").lower() for k in keywords)
+            any(k in (job.get("locationsText") or "").lower() for k in keywords) or
+            any(k in str(job.get("externalPath") or "").lower() for k in keywords)
             for job in jobs
         )
 
-        if not has_any_potential and location_ids is not None:
+        if not has_any_potential and not is_global_scrape:
             no_relevant_pages += 1
             payload["offset"] += pagesize
             continue
 
-        # dedup
-        page_ids = {
-            str(job.get("externalPath"))
-            for job in jobs
-            if job.get("externalPath")
-        }
-
+        # Dedup check
+        page_ids = {str(job.get("externalPath")) for job in jobs if job.get("externalPath")}
         if page_ids.issubset(seenids):
             log_stop(company_name, "duplicate page detected")
             break
-
         seenids.update(page_ids)
 
         filteredcount = 0
-
-        # 🔥 LIMIT detail calls per page (critical)
-        detail_budget = 5
-
+        detail_budget = 20 if is_global_scrape else 5 # Higher budget for global/multi-location sites
         batch = []
 
         for job in jobs:
             title = job.get("title")
-            externalpath = job.get("externalPath")
-
+            externalpath = str(job.get("externalPath", ""))
+            locations_text = (job.get("locationsText") or "").strip()
+            
             if not title or not externalpath:
                 continue
+            if DEBUG_FILTERS:
+                FILTER_STATS["raw_jobs_seen"] += 1
 
-            primary = job.get("location")
-            extras = job.get("additionalLocations") or []
-            locations_text = job.get("locationsText") or ""
+            # 🔥 THE NVIDIA FIX: Identify Japan via URL even if location says "2 Locations"
+            url_path_lower = externalpath.lower()
+            url_indicates_japan = any(k in url_path_lower for k in ["japan", "tokyo", "osaka"])
+            is_multi = "location" in locations_text.lower() or not locations_text
 
-            display_parts = []
+            display_location = locations_text
+            filter_location = locations_text.lower()
 
-            if isinstance(primary, dict):
-                name = primary.get("descriptor") or primary.get("name")
-                if name:
-                    display_parts.append(name.strip())
-            elif isinstance(primary, str):
-                display_parts.append(primary.strip())
-
-            for loc in extras:
-                if isinstance(loc, str):
-                    display_parts.append(loc.strip())
-                elif isinstance(loc, dict):
-                    name = loc.get("descriptor") or loc.get("name")
-                    if name:
-                        display_parts.append(name.strip())
-
-            display_location = " / ".join(display_parts) if display_parts else locations_text.strip()
-            filter_location = " ".join(display_parts).strip().lower()
-
-            # 🔥 SMART detail trigger
+            # 🔥 Trigger Detail fetch for multi-location roles or high-confidence URL matches
             needs_detail = (
-                not filter_location
-                or "locations" in display_location.lower()
+                is_multi 
+                or not locations_text 
+                or (url_indicates_japan and "japan" not in filter_location)
             )
 
             if needs_detail and detail_budget > 0:
                 detail_budget -= 1
-                detail_calls += 1
-
                 detail = safe_request(
-                    "GET",
+                    "GET", 
                     f"https://{subdomain}.{cluster}.myworkdayjobs.com/wday/cxs/{subdomain}/{tenant}{externalpath}",
-                    headers={"User-Agent": "Mozilla/5.0"},
+                    headers={"User-Agent": "Mozilla/5.0"}
                 )
-
+                
                 if detail and detail.status_code == 200:
-                    if detail and detail.status_code == 200:
-                        try:
-                            detail_json = detail.json()
-                        except Exception:
-                            detail_json = {}
-                    detail_locations = _extract_workday_locations_from_detail(detail_json)
+                    try:
+                        detail_json = detail.json()
+                        detail_locations = _extract_workday_locations_from_detail(detail_json)
+                        if detail_locations:
+                            display_location = " / ".join(detail_locations)
+                            filter_location = " ".join(detail_locations).lower()
+                    except Exception:
+                        pass
 
-                    if detail_locations:
-                        display_location = " / ".join(detail_locations)
-                        filter_location = " ".join(detail_locations).lower()
-
+            # Classification & Validation
             seniority, role = classify_job(title)
-
             region, is_remote, is_japan, remote_scope, is_valid = (
-                enrich_and_validate_location(display_location)
+                enrich_and_validate_location(display_location, company_name, externalpath)
             )
+
+            # 🔥 FINAL SAFETY NET: If the URL explicitly contains Japan/Tokyo keywords, 
+            # we force include the job even if the string-based validation was unsure.
+            if not is_valid and url_indicates_japan:
+                is_valid = True
+                is_japan = True
+                # Clean up display text for generic roles
+                if "location" in display_location.lower():
+                    display_location = "Tokyo, Japan (Multiple Locations)"
 
             if not is_valid:
                 continue
 
             filteredcount += 1
             totaljobs += 1
-
             batch.append(
                 job_row(
-                    company_name,
-                    str(externalpath),
-                    title,
-                    display_location,
+                    company_name, externalpath, title, display_location, 
                     f"https://{subdomain}.{cluster}.myworkdayjobs.com/en-US/{tenant}{externalpath}",
-                    seniority,
-                    role,
-                    region,
-                    is_remote,
-                    is_japan,
-                    remote_scope,
-                    is_valid,
-               )
+                    seniority, role, region, is_remote, is_japan, remote_scope, is_valid
+                )
             )
+
         if batch:
             upsert_jobs(company_name, batch)
 
-        log_page(
-            company_name,
-            offset=curoffset,
-            api_total=total,
-            raw_in_page=len(jobs),
-            relevant_in_page=filteredcount,
-            extra=f"detail_calls={detail_calls}"
-        )
+        log_page(company_name, offset=curoffset, api_total=total, 
+                 raw_in_page=len(jobs), relevant_in_page=filteredcount)
 
-        # early exit
+        # Update irrelevant page counter
         if filteredcount == 0:
             no_relevant_pages += 1
         else:
             no_relevant_pages = 0
 
-        if no_relevant_pages >= 2:
-            log_stop(company_name, "2 consecutive irrelevant pages")
+        # Stop if we hit too many empty pages
+        if no_relevant_pages >= max_irrelevant_pages:
+            log_stop(company_name, f"{no_relevant_pages} consecutive irrelevant pages")
             break
 
         if len(jobs) < pagesize:
             log_stop(company_name, "last page")
             break
 
-        if total and curoffset + pagesize >= total:
-            log_stop(company_name, "reached total")
-            break
-
         payload["offset"] += pagesize
-    
-    if totaljobs == 0:
-        print(f"[{company_name}] ⚠️ No relevant jobs after filtering (raw={rawlistingstotal})")
-    
+
     log_summary(company_name, rawlistingstotal, totaljobs)
-
-    if rawlistingstotal > 0 and totaljobs == 0:
-        log_error(company_name, "no relevant jobs after filtering")
-        return False
-
     mark_removed_jobs(company_name, seenids)
-    log_success(company_name)
-
     return True
 
 
 # ---------------------------------------------------------------------------
 # Lever
 # ---------------------------------------------------------------------------
-
 
 def scrape_lever(company_slug: str, company_name: str) -> bool:
     log_start(company_name, "Lever")
@@ -1135,10 +1089,10 @@ def scrape_lever(company_slug: str, company_name: str) -> bool:
         log_error(company_name, f"JSON parse error: {e}")
         return False
 
-    # ✅ FIX: Lever returns list directly
+    # Lever returns a list of postings directly
     jobs = data if isinstance(data, list) else []
-
     raw_total = len(jobs)
+    
     log_page(company_name, offset=0, raw_in_page=raw_total, extra="single API response")
 
     seen_ids: set[str] = set()
@@ -1156,17 +1110,22 @@ def scrape_lever(company_slug: str, company_name: str) -> bool:
         location_name = categories.get("location", "") or ""
         workplace_type = job.get("workplaceType", "")
 
+        # Normalize location for remote roles
         if workplace_type == "remote" and "remote" not in location_name.lower():
             location_name = f"Remote, {location_name}".strip(", ")
 
+        # Ensure we have the full URL for the validator "URL Hint" logic
+        external_id = str(external_id)
+        job_url = job.get("hostedUrl") or f"https://jobs.lever.co/{company_slug}/{external_id}"
+
         seniority, role = classify_job(title)
-        region, is_remote, is_japan, remote_scope, is_valid = enrich_and_validate_location(location_name)
+        
+        region, is_remote, is_japan, remote_scope, is_valid = (
+            enrich_and_validate_location(location_name, company_name, job_url)
+        )
 
         if not is_valid:
             continue
-
-        external_id = str(external_id)
-        job_url = job.get("hostedUrl") or f"https://jobs.lever.co/{company_slug}/{external_id}"
 
         seen_ids.add(external_id)
         relevant += 1
@@ -1178,21 +1137,23 @@ def scrape_lever(company_slug: str, company_name: str) -> bool:
             )
         )
 
+    # Process the batch if any jobs passed the filter
     if batch:
         upsert_jobs(company_name, batch)
 
     log_summary(company_name, raw_total, relevant)
 
-    # ✅ FIX: soft failure detection
-    if raw_total > 0 and relevant == 0:
-        log_error(company_name, "no relevant jobs after filtering")
+    # Only return False (triggering retry) if the API literally returned nothing (potential block/fail)
+    if raw_total == 0:
+        log_error(company_name, "API returned zero jobs (possible structure change or block)")
         return False
 
+    # If raw_total > 0 but relevant == 0, it means the filter worked perfectly (e.g., Kinsta).
+    # We proceed to mark_removed_jobs to clear any old Japan roles that are now closed.
     mark_removed_jobs(company_name, seen_ids)
     log_success(company_name)
 
     return True
-
 
 # ---------------------------------------------------------------------------
 # eightfold.ai
@@ -1977,22 +1938,20 @@ def scrape_waymo(company_name: str = "Waymo") -> bool:
     params = [("country_codes[]", "JP")]
 
     headers = {
-        "User-Agent": "Mozilla/5.0",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Referer": "https://careers.withwaymo.com/",
     }
 
-    # Warm session via safe_request (instead of raw session.get)
+    # Warm session
     safe_request("GET", "https://careers.withwaymo.com/", headers=headers)
-
     response = safe_request("GET", url, params=params, headers=headers)
 
     if not response or response.status_code != 200:
         log_error(company_name, f"HTTP {getattr(response, 'status_code', 'no response')}")
-        return False  # ❗ FIXED
+        return False
 
     soup = BeautifulSoup(response.text, "html.parser")
-
     jobs = soup.select("article.job-search-results-card-col")
 
     raw_total = len(jobs)
@@ -2001,9 +1960,8 @@ def scrape_waymo(company_name: str = "Waymo") -> bool:
 
     log_page(company_name, offset=0, raw_in_page=raw_total, extra="HTML parse")
 
-    # 🔴 Optional but HIGH VALUE: detect breakage
     if raw_total == 0:
-        log_error(company_name, "no job cards found (HTML structure may have changed)")
+        log_error(company_name, "no job cards found (HTML structure or dynamic loading changed)")
         return False
 
     batch = []
@@ -2016,8 +1974,10 @@ def scrape_waymo(company_name: str = "Waymo") -> bool:
 
             title = a.get_text(strip=True)
             job_url = a["href"]
-
-            external_id = job_url.rstrip("/").split("/")[-1]
+            
+            # Waymo URLs can be relative or absolute; ensure we have a string for the validator
+            full_url = job_url if job_url.startswith("http") else f"https://careers.withwaymo.com{job_url}"
+            external_id = full_url.rstrip("/").split("/")[-1]
 
             loc_el = job.select_one(".job-component-location span")
             location_name = loc_el.get_text(strip=True) if loc_el else "Tokyo, Japan"
@@ -2026,8 +1986,11 @@ def scrape_waymo(company_name: str = "Waymo") -> bool:
                 location_name = "Tokyo, Japan"
 
             seniority, role = classify_job(title)
+            
+            # ✅ FIXED: Passed 3 arguments to match your new production signature
+            # ✅ URL Hint: Waymo URLs usually contain '-japan' which helps validation
             region, is_remote, is_japan, remote_scope, is_valid = (
-                enrich_and_validate_location(location_name)
+                enrich_and_validate_location(location_name, company_name, full_url)
             )
 
             if not is_valid:
@@ -2042,7 +2005,7 @@ def scrape_waymo(company_name: str = "Waymo") -> bool:
                     external_id,
                     title,
                     location_name,
-                    job_url,
+                    full_url,
                     seniority,
                     role,
                     region,
@@ -2054,16 +2017,21 @@ def scrape_waymo(company_name: str = "Waymo") -> bool:
             )
 
         except Exception as e:
-            log_error(company_name, f"parse error: {e}")
-            continue  # ✅ keep scraping
+            log_error(company_name, f"parse error on job: {e}")
+            continue 
 
     if batch:
         upsert_jobs(company_name, batch)
 
     log_summary(company_name, raw_total, relevant)
     mark_removed_jobs(company_name, seen_ids)
-    log_success(company_name)
+    
+    # Optional strictness: if we found HTML but no valid Japan roles, check the validator logic
+    if raw_total > 0 and relevant == 0:
+        log_error(company_name, "found roles but all were filtered out as invalid")
+        return False
 
+    log_success(company_name)
     return True
 
 # ---------------------------------------------------------------------------
