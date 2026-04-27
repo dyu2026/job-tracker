@@ -2029,6 +2029,112 @@ def scrape_waymo(company_name: str = "Waymo") -> bool:
     return True
 
 # ---------------------------------------------------------------------------
+# Wiz
+# ---------------------------------------------------------------------------
+
+def scrape_wiz(company_name: str = "Wiz") -> bool:
+    log_start(company_name, "Wiz API")
+
+    url = "https://www.wiz.io/api/fetch-jobs-data"
+
+    response = safe_request("GET", url)
+    if not response:
+        log_error(company_name, "no HTTP response from Wiz API after retries")
+        return False
+
+    # --- Safe JSON parsing ---
+    try:
+        data = response.json()
+    except Exception as e:
+        log_error(company_name, f"JSON parse error: {e}")
+        return False
+
+    # --- Extract jobs safely (Wiz returns nested structure) ---
+    if isinstance(data, dict):
+        jobs = (
+            data.get("jobs")
+            or data.get("data")
+            or data.get("positions")
+            or data.get("items")
+            or list(data.values())[0] if data else []
+        )
+    elif isinstance(data, list):
+        jobs = data
+    else:
+        log_error(company_name, "Unexpected API response format")
+        return False
+
+    raw_total = len(jobs)
+
+    log_page(company_name, offset=0, raw_in_page=raw_total, extra="single API response")
+
+    seen_ids: set[str] = set()
+    relevant = 0
+    batch = []
+
+    for job in jobs:
+        if not isinstance(job, dict):
+            continue
+
+        title = job.get("title")
+        external_id = job.get("id")
+
+        if not title:
+            continue
+
+        # --- Normalize ID ---
+        external_id = str(external_id) if external_id else None
+
+        # --- Location handling ---
+        location_name = (
+            job.get("location")
+            or job.get("locations")
+            or job.get("country")
+            or ""
+        )
+
+        # --- URL handling ---
+        apply_url = job.get("url") or job.get("applyUrl")
+
+        if not external_id or not apply_url:
+            continue
+
+        seniority, role = classify_job(title)
+        region, is_remote, is_japan, remote_scope, is_valid = enrich_and_validate_location(location_name)
+
+        if not is_valid:
+            continue
+
+        seen_ids.add(external_id)
+        relevant += 1
+
+        batch.append(
+            job_row(
+                company_name,
+                external_id,
+                title,
+                location_name,
+                apply_url,
+                seniority,
+                role,
+                region,
+                is_remote,
+                is_japan,
+                remote_scope,
+                is_valid,
+            )
+        )
+
+    if batch:
+        upsert_jobs(company_name, batch)
+
+    log_summary(company_name, raw_total, relevant)
+    mark_removed_jobs(company_name, seen_ids)
+    log_success(company_name)
+
+    return True
+
+# ---------------------------------------------------------------------------
 # LinkedIn (Google News RSS)
 # ---------------------------------------------------------------------------
 
@@ -2146,6 +2252,7 @@ def run_task(func, *args) -> dict:
 
 
 SCRAPER_TASKS: list[tuple] = [
+    (scrape_wiz,),
     (scrape_monday,),
     (scrape_miro,),
     (scrape_revolut,),
