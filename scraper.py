@@ -2260,6 +2260,9 @@ SCRAPER_TASKS: list[tuple] = [
     (scrape_meta,),
     (scrape_wayve,),
     (scrape_waymo,),
+    (scrape_smartrecruiters, "linkedin3", "LinkedIn"),
+    (scrape_smartrecruiters, "Canva", "Canva"),
+    (scrape_smartrecruiters, "wise", "Wise"),
     (scrape_greenhouse, "canonical", "Canonical"),
     (scrape_greenhouse, "nansen", "Nansen"),
     (scrape_greenhouse, "brave", "Brave"),
@@ -2301,8 +2304,6 @@ SCRAPER_TASKS: list[tuple] = [
     (scrape_ashby, "snowflake", "Snowflake"),
     (scrape_ashby, "cursor", "Cursor"),
     (scrape_ashby, "cognition", "Cognition"),
-    (scrape_smartrecruiters, "Canva", "Canva"),
-    (scrape_smartrecruiters, "wise", "Wise"),
     (
         scrape_workday,
         "disney|disneycareer",
