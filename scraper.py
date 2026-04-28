@@ -57,6 +57,27 @@ db_queue = queue.Queue(maxsize=5000)
 DEBUG_FILTERS = True
 FILTER_STATS = defaultdict(int)
 
+TITLE_NEGATIVE_PATTERNS = [
+    r"\bamer\b",
+    r"\bemea\b",
+    r"\blatam\b",
+    r"\busa\b",
+    r"\bunited states\b",
+    r"\bcanada\b",
+    r"\beurope\b",
+    r"\bmiddle east\b",
+    r"\buae\b",
+    r"\bindia\b",
+    r"\bindonesia\b",
+    r"\bvietnam\b",
+    r"\bsingapore\b",
+    r"\baustralia\b",
+    r"\bnew york\b",
+    r"\bsan francisco\b",
+    r"\boregon\b",
+    r"\bbrisbane\b",
+]
+
 
 # ---------------------------------------------------------------------------
 # Logging helpers
@@ -365,9 +386,17 @@ def include_job(
         return "japan" in low or "tokyo" in low
     return False
 
+def title_indicates_non_japan(title: str) -> bool:
+    t = (title or "").lower()
+    return any(re.search(p, t) for p in TITLE_NEGATIVE_PATTERNS)
 
-def enrich_and_validate_location(location_name: str, company: str = "", job_id: str = ""):
+def enrich_and_validate_location(location_name: str, company: str = "", job_id: str = "", title: str = ""):
     region, is_remote, is_japan, remote_scope = classify_location(location_name)
+
+    # reviews title for non-jp location names
+    if location_name and location_name.lower().strip() == "remote":
+        if title_indicates_non_japan(title):
+            return region, is_remote, False, "restricted", False
 
     is_valid = include_job(
         is_japan=is_japan,
@@ -551,6 +580,7 @@ def scrape_greenhouse(company_slug: str, company_name: str) -> bool:
     batch = []
 
     for job in jobs:
+        title = job.get("title")
         location_name = (
             job["location"].get("name", "")
             if isinstance(job.get("location"), dict)
@@ -558,7 +588,7 @@ def scrape_greenhouse(company_slug: str, company_name: str) -> bool:
         )
 
         seniority, role = classify_job(job["title"])
-        region, is_remote, is_japan, remote_scope, is_valid = enrich_and_validate_location(location_name)
+        region, is_remote, is_japan, remote_scope, is_valid = enrich_and_validate_location(location_name, title=title)
 
         if not is_valid:
             continue
@@ -681,7 +711,7 @@ def scrape_ashby(company_slug: str, company_name: str) -> bool:
             location_name = ""
 
         seniority, role = classify_job(title)
-        region, is_remote, is_japan, remote_scope, is_valid = enrich_and_validate_location(location_name)
+        region, is_remote, is_japan, remote_scope, is_valid = enrich_and_validate_location(location_name, title=title)
 
         if not is_valid:
             continue
@@ -778,7 +808,7 @@ def scrape_smartrecruiters(company_slug: str, company_name: str) -> bool:
         )
 
         seniority, role = classify_job(title)
-        region, is_remote, is_japan, remote_scope, is_valid = enrich_and_validate_location(location_name)
+        region, is_remote, is_japan, remote_scope, is_valid = enrich_and_validate_location(location_name, title=title)
 
         if not is_valid:
             continue
@@ -1222,7 +1252,7 @@ def scrape_eightfold(company_slug: str, company_name: str, location: str, pid: s
             seen_ids.add(external_id)
 
             seniority, role = classify_job(title)
-            region, is_remote, is_japan, remote_scope, is_valid = enrich_and_validate_location(location_name)
+            region, is_remote, is_japan, remote_scope, is_valid = enrich_and_validate_location(location_name, title=title)
 
             if not is_valid:
                 continue
@@ -1336,7 +1366,7 @@ def scrape_bamboohr(subdomain: str, company_name: str) -> bool:
         )
 
         seniority, role = classify_job(title)
-        region, is_remote, is_japan, remote_scope, is_valid = enrich_and_validate_location(location_name)
+        region, is_remote, is_japan, remote_scope, is_valid = enrich_and_validate_location(location_name, title=title)
 
         if not is_valid:
             continue
@@ -1431,7 +1461,7 @@ def scrape_netflix() -> None:
             seen_ids.add(external_id)
 
             seniority, role = classify_job(title)
-            region, is_remote, is_japan, remote_scope, is_valid = enrich_and_validate_location(location_name)
+            region, is_remote, is_japan, remote_scope, is_valid = enrich_and_validate_location(location_name, title=title)
 
             if not is_valid:
                 continue
@@ -1577,7 +1607,7 @@ def scrape_uber(company_name: str = "Uber") -> None:
 
             seniority, role = classify_job(title)
             region, is_remote, is_japan, remote_scope, is_valid = (
-                enrich_and_validate_location(location_name)
+                enrich_and_validate_location(location_name, title=title)
             )
 
             if not is_valid:
@@ -1738,7 +1768,7 @@ def scrape_meta(company_name: str = "Meta") -> None:
 
                     seniority, role = classify_job(title)
                     region, is_remote, is_japan, remote_scope, is_valid = (
-                        enrich_and_validate_location(location_name)
+                        enrich_and_validate_location(location_name, title=title)
                     )
 
                     if not is_valid:
@@ -1886,7 +1916,7 @@ def scrape_wayve(company_name: str = "Wayve") -> bool:
 
         seniority, role = classify_job(title)
         region, is_remote, is_japan, remote_scope, is_valid = (
-            enrich_and_validate_location(location_name)
+            enrich_and_validate_location(location_name, title=title)
         )
 
         if not is_valid:
@@ -2100,7 +2130,7 @@ def scrape_wiz(company_name: str = "Wiz") -> bool:
             continue
 
         seniority, role = classify_job(title)
-        region, is_remote, is_japan, remote_scope, is_valid = enrich_and_validate_location(location_name)
+        region, is_remote, is_japan, remote_scope, is_valid = enrich_and_validate_location(location_name, title=title)
 
         if not is_valid:
             continue
