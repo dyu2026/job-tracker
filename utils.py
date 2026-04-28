@@ -35,7 +35,7 @@ RESTRICTED_REGION_KEYWORDS = (
     "europe", "emea",
     "united kingdom", "london",
     "france", "germany", "ireland", "netherlands", "turkey",
-    "dublin", "deu", "che",
+    "dublin", "deu", "che", "porto",
     "spain", "sweden", "italy", "norway", "finland", "greece", "swe",
     "belgium", "denmark", "lithuania", "lisbon", "hungary",
     "czech republic", "prague", "barcelona", "luxembourg",
