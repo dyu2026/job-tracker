@@ -23,7 +23,7 @@ REMOTE_SYNONYMS = ("remote", "home based", "home-based", "wfh", "work from home"
 # --- Location: if remote but text looks tied to these regions, scope = restricted ---
 
 RESTRICTED_REGION_KEYWORDS = (
-    "united states", "usa", "us",
+    "u.s.a.", "u.s.", "united states", "usa", "us",
     "new york", "nyc", "san francisco", "seattle", "chicago", "atlanta",
     "north america", "americas", "amers", "california", "wa",
     "canada", "toronto", "vancouver", "british columbia", "montreal",
