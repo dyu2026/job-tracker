@@ -15,14 +15,12 @@ import re
 import requests
 import threading
 import time
-import traceback
 import unicodedata
 import urllib.parse
 import queue
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime, timedelta, timezone
-from urllib.parse import urlparse
 
 from bs4 import BeautifulSoup
 from playwright.sync_api import sync_playwright
@@ -58,6 +56,8 @@ DEBUG_FILTERS = True
 FILTER_STATS = defaultdict(int)
 
 TITLE_NEGATIVE_PATTERNS = [
+    r"\bu\.s\.a\.\b",
+    r"\bu\.s\.\b",
     r"\bamer\b",
     r"\bemea\b",
     r"\blatam\b",
@@ -2201,14 +2201,17 @@ def scrape_linkedin() -> None:
         if not hasattr(entry, "published_parsed") or entry.published_parsed is None:
             continue
         published_utc = datetime(*entry.published_parsed[:6], tzinfo=timezone.utc)
-        if published_utc < cutoff: continue
+        if published_utc < cutoff: 
+            continue
 
         title = entry.title
         summary = entry.get("summary", "")
-        if not linkedin_matches_filters(title + " " + summary): continue
+        if not linkedin_matches_filters(title + " " + summary): 
+            continue
 
         url = extract_linkedin_url(summary) or entry.link
-        if not url: continue
+        if not url: 
+            continue
 
         unique_posts[url] = {
             "title": title,
