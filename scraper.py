@@ -63,6 +63,7 @@ TITLE_NEGATIVE_PATTERNS = [
     r"\bunited states\b",
     r"\bcanada\b",
     r"\beurope\b",
+    r"\bgermany\b",
     r"\bmiddle east\b",
     r"\buae\b",
     r"\bindia\b",
