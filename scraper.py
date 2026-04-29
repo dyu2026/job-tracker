@@ -61,6 +61,8 @@ TITLE_NEGATIVE_PATTERNS = [
     r"\blatam\b",
     r"\busa\b",
     r"\bunited states\b",
+    r"\bu\.s\.a\.(?!\w)",
+    r"\bu\.s\.(?!\w)",
     r"\bcanada\b",
     r"\beurope\b",
     r"\bgermany\b",
