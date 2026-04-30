@@ -2336,6 +2336,7 @@ SCRAPER_TASKS: list[tuple] = [
     (scrape_smartrecruiters, "wise", "Wise"),
     (scrape_greenhouse, "hdejamidcareer", "Hennge"),
     (scrape_greenhouse, "canonical", "Canonical"),
+    (scrape_greenhouse, "pinterest", "Pinterest"),
     (scrape_greenhouse, "siei", "SonyInteractiveEntertainment"),
     (scrape_greenhouse, "nansen", "Nansen"),
     (scrape_greenhouse, "brave", "Brave"),
