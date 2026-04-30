@@ -2419,6 +2419,13 @@ SCRAPER_TASKS: list[tuple] = [
     ),
     (
         scrape_workday,
+        "logitech|Logitech|wd5",
+        "Logitech",
+        "8b705da2becf43cfaccc091da0988ab2",
+        "locationCountry",
+    ),
+    (
+        scrape_workday,
         "cisco|Cisco_Careers",
         "Cisco",
         [
