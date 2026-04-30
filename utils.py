@@ -55,6 +55,7 @@ ROLE_KEYWORDS = [
     ("solutions architect and engineer", [
         "solutions architect", "solution architect", "solutions engineer",
         "solution engineer",
+        "ソリューションアーキテクト", "ソリューションエンジニア",
     ]),
     
     ("customer solution", [
@@ -63,11 +64,13 @@ ROLE_KEYWORDS = [
         "tam", "technical account manager", "consultant", "consulting",
         "implementation", "professional services", "presales", "technical solutions",
         "technical deployment", "functional consultant",
+        "カスタマーソリューション",
     ]),
 
     ("Communications and PR", [
         "communications", "public relations", "pr", "media relations",
         "publicity",
+        "コミュニケーション", "広報",
     ]),
 
     ("product management", [
@@ -111,7 +114,7 @@ ROLE_KEYWORDS = [
     ("marketing", [
         "marketing", "growth", "seo", "content", "brand", "market", "events", "field marketer",
         "community manager",
-        "マーケティング", "ブランド", "プロモーション",
+        "マーケティング", "ブランド", "プロモーション", "マーケター",
     ]),
 
     ("business development", [
@@ -125,12 +128,14 @@ ROLE_KEYWORDS = [
         "sales", "account executive", "account manager", "cro", "account management",
         "gtm", "partnerships", "account director", "smb", "deal management",
         "partner success", "deal desk", "lead generation",
+        "セールス",
     ]),
 
     ("customer success and experience", [
         "customer success", "customer support", "customer experience", "csm",
         "account manager", "onboarding", "renewals", "customer performance",
         "customer care", "claims experience", "renewal",
+        "カスタマーサクセス",
     ]),
 
     ("HR and recruiting", [
@@ -140,6 +145,7 @@ ROLE_KEYWORDS = [
 
     ("finance and accounting", [
         "finance", "accounting", "fp&a", "controller", "accountant",
+        "財務", "ファイナンス", "経理",
     ]),
 
     ("Information Technology", [
@@ -152,7 +158,7 @@ ROLE_KEYWORDS = [
         "operations", "ops", "support", "administrative", "clerk",
         "health keeper", "workplace experience", "lead diag tech", "fleet readiness",
         "services liason", "operational safety",
-        "オペレーション", "運用", "サポート", "事務",
+        "オペレーション", "運用", "サポート", "事務", "総務",
     ]),
 
     ("security", [
